@@ -17,11 +17,37 @@ class LLMService:
     def __init__(self):
         if not OPENAI_AVAILABLE:
             raise ImportError("openai package not installed. Please install with: pip install openai")
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+        nvidia_base_url = os.getenv("NVIDIA_BASE_URL")
+        nvidia_model = os.getenv("NVIDIA_MODEL_NAME")
+
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        openai_base_url = os.getenv("OPENAI_BASE_URL")
+        openai_model = os.getenv("MODEL_NAME", "MiniMax-M2.7")
+
+        use_nvidia = any([nvidia_api_key, nvidia_base_url, nvidia_model])
+
+        if use_nvidia:
+            api_key = nvidia_api_key or openai_api_key
+            base_url = self._normalize_openai_compatible_base_url(nvidia_base_url or openai_base_url)
+            self.model = nvidia_model or "mistralai/mistral-large"
+        else:
+            api_key = openai_api_key
+            base_url = openai_base_url
+            self.model = openai_model
+
         self.client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL"),
+            api_key=api_key,
+            base_url=base_url,
         )
-        self.model = os.getenv("MODEL_NAME", "MiniMax-M2.7")
+
+    def _normalize_openai_compatible_base_url(self, base_url: Optional[str]) -> Optional[str]:
+        if not base_url:
+            return None
+        normalized = base_url.strip().rstrip("/")
+        if normalized.endswith("/v1"):
+            return normalized
+        return f"{normalized}/v1"
 
     def _clean_response(self, text: str) -> str:
         if not text:
