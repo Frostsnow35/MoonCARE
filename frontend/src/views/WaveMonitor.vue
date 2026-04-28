@@ -194,6 +194,7 @@ const emotionEmoji = computed(() => {
 
 let pollInterval = null
 let animationFrame = null
+let lastBiometricTimestamp = null
 
 const motionClass = computed(() => {
   const classes = {
@@ -322,12 +323,18 @@ async function fetchData() {
   try {
     const response = await biometricAPI.query({
       user_id: 1,
-      limit: 10
+      limit: 1
     })
 
     if (response && response.length > 0) {
       // Get the latest data point
       const latest = response[0]
+      const latestTimestamp = latest.timestamp || null
+
+      if (latestTimestamp && latestTimestamp === lastBiometricTimestamp) {
+        return
+      }
+      lastBiometricTimestamp = latestTimestamp
 
       currentHrv.value = latest.hrv || 0
       currentTemp.value = latest.skin_temperature || 0
@@ -347,6 +354,8 @@ async function fetchData() {
       }
 
       dataPoints.value = hrvData.value.length
+
+      fetchEmotion()
     }
     // If no data, do nothing - hardware data will come when device is connected
   } catch (error) {
@@ -424,10 +433,8 @@ onMounted(async () => {
 
   // Start polling
   fetchData()
-  fetchEmotion()
   pollInterval = setInterval(() => {
     fetchData()
-    fetchEmotion()
   }, 1000)
 
   // Start drawing

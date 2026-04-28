@@ -2,8 +2,7 @@
 Agent服务 - 委托给新的 Agent 系统
 """
 import traceback
-from typing import Dict, List
-from datetime import datetime
+from typing import Dict, Optional
 from app.config import settings
 
 try:
@@ -23,7 +22,6 @@ class AgentService:
 
     def __init__(self):
         self.context_window = settings.CONTEXT_WINDOW_SIZE  # 10轮对话
-        self.conversation_histories: Dict[str, List[Dict]] = {}
         self.router = None  # Lazy init
         self.perception = None  # Lazy init
 
@@ -72,29 +70,6 @@ class AgentService:
             agent_name = "error"
             state = {"risk_level": "low", "cycle_phase": "未知"}
 
-        # 保存对话历史
-        if session_id not in self.conversation_histories:
-            self.conversation_histories[session_id] = []
-
-        self.conversation_histories[session_id].append({
-            "role": "user",
-            "content": user_message,
-            "emotion": state.get("risk_level", "low"),
-            "timestamp": datetime.now().isoformat()
-        })
-
-        self.conversation_histories[session_id].append({
-            "role": "assistant",
-            "content": reply,
-            "agent": agent_name,
-            "timestamp": datetime.now().isoformat()
-        })
-
-        # 保留最近的上下文
-        if len(self.conversation_histories[session_id]) > self.context_window * 2:
-            self.conversation_histories[session_id] = \
-                self.conversation_histories[session_id][-self.context_window * 2:]
-
         return {
             "message": reply,
             "intent": agent_name,
@@ -103,11 +78,12 @@ class AgentService:
             "state": state
         }
 
-    def get_conversation_history(self, session_id: str) -> List[Dict]:
-        """获取对话历史"""
-        return self.conversation_histories.get(session_id, [])
 
-    def clear_history(self, session_id: str):
-        """清除对话历史"""
-        if session_id in self.conversation_histories:
-            del self.conversation_histories[session_id]
+_agent_service_singleton: Optional[AgentService] = None
+
+
+def get_agent_service() -> AgentService:
+    global _agent_service_singleton
+    if _agent_service_singleton is None:
+        _agent_service_singleton = AgentService()
+    return _agent_service_singleton

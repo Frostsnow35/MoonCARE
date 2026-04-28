@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import Dict, List
 import json
 import uuid
@@ -8,7 +9,7 @@ from datetime import datetime
 from app.database import get_db, SessionLocal
 from app.models.conversation import Conversation
 from app.schemas.chat import ChatMessage, ChatResponse, ChatHistoryResponse
-from app.services.agent_service import AgentService
+from app.services.agent_service import get_agent_service
 from app.services.nlp_service import NLPService
 
 router = APIRouter(prefix="/chat", tags=["AI对话"])
@@ -48,7 +49,7 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
     session_id = str(uuid.uuid4())
     await manager.connect(websocket, session_id, user_id)
 
-    agent_service = AgentService()
+    agent_service = get_agent_service()
     nlp_service = NLPService()
     db = SessionLocal()
 
@@ -69,6 +70,9 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
 
             # Analyze user message
             nlp_result = await nlp_service.analyze_text(user_message)
+            intent = nlp_service.get_intent(user_message)
+            is_sensitive = nlp_service.check_sensitive(user_message)
+            nlp_result["intent"] = intent
 
             # Get AI response
             response = await agent_service.get_response(
@@ -78,14 +82,21 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
                 context=nlp_result
             )
 
+            last_turn = db.query(func.max(Conversation.turn_number)).filter(
+                Conversation.user_id == user_id,
+                Conversation.session_id == session_id,
+            ).scalar() or 0
+            user_turn = last_turn + 1
+            assistant_turn = last_turn + 2
+
             # Save conversation turn
             conversation = Conversation(
                 user_id=user_id,
                 session_id=session_id,
-                turn_number=len(agent_service.get_conversation_history(session_id)),
+                turn_number=user_turn,
                 role="user",
                 content=user_message,
-                intent=nlp_result.get("intent"),
+                intent=intent,
                 sentiment_score=nlp_result.get("sentiment_score"),
                 is_sensitive=1 if is_sensitive else 0
             )
@@ -94,7 +105,7 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
             assistant_conv = Conversation(
                 user_id=user_id,
                 session_id=session_id,
-                turn_number=len(agent_service.get_conversation_history(session_id)) + 1,
+                turn_number=assistant_turn,
                 role="assistant",
                 content=response["message"]
             )
@@ -107,7 +118,7 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
                 "message": response["message"],
                 "sentiment_score": nlp_result["sentiment_score"],
                 "intent": response.get("intent", "general"),
-                "is_sensitive": False,
+                "is_sensitive": is_sensitive,
                 "suggestions": response.get("suggestions", []),
                 "risk_level": response.get("state", {}).get("risk_level", "low")
             })
@@ -117,6 +128,7 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
         db.close()
     except Exception as e:
         manager.disconnect(session_id)
+        db.rollback()
         db.close()
         try:
             await websocket.send_json({
@@ -179,15 +191,18 @@ async def send_chat_message(
     if not session_id:
         session_id = str(uuid.uuid4())
 
-    agent_service = AgentService()
+    agent_service = get_agent_service()
     nlp_service = NLPService()
 
     # 分析消息
     nlp_result = await nlp_service.analyze_text(message)
+    intent = nlp_service.get_intent(message)
+    is_sensitive = nlp_service.check_sensitive(message)
 
     # 构建上下文
     context = {
         **nlp_result,
+        "intent": intent,
         "cycle_phase": cycle_phase,
         "sensor_data": {}
     }
@@ -200,12 +215,41 @@ async def send_chat_message(
         context=context
     )
 
+    last_turn = db.query(func.max(Conversation.turn_number)).filter(
+        Conversation.user_id == user_id,
+        Conversation.session_id == session_id,
+    ).scalar() or 0
+    user_turn = last_turn + 1
+    assistant_turn = last_turn + 2
+
+    user_conv = Conversation(
+        user_id=user_id,
+        session_id=session_id,
+        turn_number=user_turn,
+        role="user",
+        content=message,
+        intent=intent,
+        sentiment_score=nlp_result.get("sentiment_score"),
+        is_sensitive=1 if is_sensitive else 0,
+    )
+    assistant_conv = Conversation(
+        user_id=user_id,
+        session_id=session_id,
+        turn_number=assistant_turn,
+        role="assistant",
+        content=response["message"],
+    )
+    db.add(user_conv)
+    db.add(assistant_conv)
+    db.commit()
+
     return {
         "session_id": session_id,
         "reply": response["message"],
         "intent": response.get("intent", "general"),
         "risk_level": response.get("state", {}).get("risk_level", "low"),
-        "suggestions": response.get("suggestions", [])
+        "suggestions": response.get("suggestions", []),
+        "is_sensitive": is_sensitive
     }
 
 
