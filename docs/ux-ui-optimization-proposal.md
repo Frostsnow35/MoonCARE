@@ -140,7 +140,7 @@ fontFamily: ['PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'system-ui', 
 ├─────────────────────────────┤
 │  情绪宝宝 (突出入口) ⭐       │
 ├─────────────────────────────┤
-│  PMS情绪筛查                  │
+│  经前状态聊聊                  │
 └─────────────────────────────┘
 ```
 
@@ -254,7 +254,7 @@ fontFamily: ['PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'system-ui', 
 | 3 | 日记 emoji 快速选择 | `Diary.vue` | ✅ 完成 |
 | 4 | 底部导航动效 | `BottomNav.vue` | ✅ 完成 |
 | 5 | 周期页 Tab 切换 | `Cycle.vue` | ✅ 完成 |
-| 6 | PMS筛查模块样式统一 | `Home.vue` | ✅ 完成 |
+| 6 | 经前状态入口样式统一 | `Home.vue` | ✅ 完成 |
 | 7 | 情绪宝宝图标放大 | `Home.vue` | ✅ 完成 |
 | 8 | 页面宽度统一 | 所有页面 | ✅ 完成 |
 | 9 | 情绪宝宝对话气泡渐变 | `Chat.vue` | ✅ 完成 |
@@ -287,7 +287,7 @@ fontFamily: ['PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'system-ui', 
 | 首页情绪宝宝 | 🩷 (自定义 SVG) |
 | 周期阶段 | 🌱🌸🌷🌺 |
 | 疗愈活动 | 🌬️🎵🚶 |
-| PMS筛查 | 🩷 |
+| 经前状态聊聊 | 🩷 |
 | 心情很好 | 😊 |
 | 心情不错 | 🙂 |
 | 心情一般 | 😐 |

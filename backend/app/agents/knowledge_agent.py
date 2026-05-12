@@ -3,6 +3,7 @@ import math
 import os
 from app.services.embedding_service import EmbeddingService
 from app.agents.llm_service import LLMService
+from app.utils.prompt_loader import render_prompt
 
 
 class KnowledgeAgent:
@@ -89,7 +90,18 @@ class KnowledgeAgent:
         # 降级：使用关键词匹配
         return self._keyword_match(message, k)
 
-    def _answer_from_knowledge(self, top_k, message):
+    def _prompt_context(self, state: dict = None):
+        """Build common prompt fields for knowledge responses."""
+        state = state or {}
+        return {
+            "memory_context": state.get("memory_context", "暂无可用长期记忆。"),
+            "recent_context": state.get("recent_context", "暂无最近对话。"),
+            "retrieved_context": state.get("retrieved_context", "暂无检索片段。"),
+            "conversation_messages": state.get("conversation_messages", []),
+            "mode_guidance": state.get("mode_guidance", ""),
+        }
+
+    def _answer_from_knowledge(self, top_k, message, state: dict = None):
         """基于检索到的知识回答"""
         references = []
         for idx, (_, item) in enumerate(top_k, start=1):
@@ -99,17 +111,7 @@ class KnowledgeAgent:
 
         reference_text = "\n\n".join(references)
 
-        system_prompt = """
-你是"她语 MoonCARE"的经期知识科普助手。
-请基于给定的参考资料回答用户问题。
-
-要求：
-1. 回答自然、温柔、可信，不要机械照搬原文。
-2. 优先基于参考资料，不要胡乱扩展。
-3. 不要做明确医疗诊断。
-4. 尽量控制在180字以内。
-5. 如果问题和参考资料关系不大，就温和地给一个通用解释。
-"""
+        system_prompt = render_prompt("knowledge_prompt.txt", **self._prompt_context(state))
 
         user_prompt = f"""
 用户问题：
@@ -119,25 +121,20 @@ class KnowledgeAgent:
 {reference_text}
 """
 
-        return self.llm.generate_reply(user_prompt, {"mode": "knowledge_rag", "raw_system_prompt": system_prompt})
+        llm_context = self._prompt_context(state)
+        llm_context.update({"mode": "knowledge_rag", "raw_system_prompt": system_prompt})
+        return self.llm.generate_reply(user_prompt, llm_context)
 
-    def _answer_from_llm(self, message):
+    def _answer_from_llm(self, message, state: dict = None):
         """知识库不可用时，直接用模型能力回答"""
-        system_prompt = """
-你是"她语 MoonCARE"的经期知识科普助手。
-你可以温柔地回答用户关于经期、PMS（经前综合征）、月经周期等相关问题。
-
-要求：
-1. 回答自然、温柔、可信，像朋友聊天一样。
-2. 尽量控制在150字以内。
-3. 不要做明确医疗诊断。
-4. 如果不确定，建议用户咨询医生。
-"""
+        system_prompt = render_prompt("knowledge_fallback_prompt.txt", **self._prompt_context(state))
 
         user_prompt = f"用户问题：{message}"
 
         try:
-            return self.llm.generate_reply(user_prompt, {"mode": "knowledge_fallback", "raw_system_prompt": system_prompt})
+            llm_context = self._prompt_context(state)
+            llm_context.update({"mode": "knowledge_fallback", "raw_system_prompt": system_prompt})
+            return self.llm.generate_reply(user_prompt, llm_context)
         except Exception as e:
             print(f"[KnowledgeAgent] LLM回答失败: {e}")
             return "我现在有点状况，可能需要稍后再试~"
@@ -145,7 +142,7 @@ class KnowledgeAgent:
     def respond(self, message: str, state: dict = None) -> str:
         # 知识库完全没加载成功
         if not self.knowledge:
-            return self._answer_from_llm(message)
+            return self._answer_from_llm(message, state)
 
         top_k = self._retrieve_top_k(message, k=3)
 
@@ -155,9 +152,9 @@ class KnowledgeAgent:
             threshold = 0.4 if self._embedding_available else 0.5
             if best_score >= threshold:
                 try:
-                    return self._answer_from_knowledge(top_k, message)
+                    return self._answer_from_knowledge(top_k, message, state)
                 except Exception:
                     pass
 
         # 知识库检索失败或分数低，直接用模型能力回答
-        return self._answer_from_llm(message)
+        return self._answer_from_llm(message, state)

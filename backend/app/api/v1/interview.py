@@ -9,7 +9,7 @@ from app.services.report_service import ReportService
 from app.agents.interview_agent import InterviewAgent
 from app.agents.intervention_agent import InterventionAgent
 
-router = APIRouter(prefix="/interview", tags=["PMS筛查访谈"])
+router = APIRouter(prefix="/interview", tags=["经前状态了解"])
 
 
 class InterviewMessage(BaseModel):
@@ -42,7 +42,7 @@ interview_sessions = {}
 
 @router.post("/start", response_model=InterviewStartResponse)
 async def start_interview(user_id: int = 1):
-    """开始 PMS 筛查访谈"""
+    """开始经前状态了解对话"""
     interview_agent = InterviewAgent()
     reply = interview_agent.start()
 
@@ -64,7 +64,7 @@ async def interview_turn(
     user_id: int = 1,
     db: Session = Depends(get_db)
 ):
-    """继续访谈"""
+    """继续经前状态了解对话"""
     if user_id not in interview_sessions:
         return InterviewTurnResponse(
             reply="请先调用 /interview/start 开始访谈",
@@ -126,8 +126,8 @@ async def ask_knowledge(
     question: str,
     user_id: int = 1
 ):
-    """直接查询 PMS 知识库"""
-    from agents.knowledge_agent import KnowledgeAgent
+    """直接查询经期/PMS相关知识库"""
+    from app.agents.knowledge_agent import KnowledgeAgent
 
     knowledge_agent = KnowledgeAgent()
     reply = knowledge_agent.respond(question, {})

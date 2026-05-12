@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Dict, List
 import json
+import logging
 import uuid
 from datetime import datetime
 
@@ -10,9 +11,12 @@ from app.database import get_db, SessionLocal
 from app.models.conversation import Conversation
 from app.schemas.chat import ChatMessage, ChatResponse, ChatHistoryResponse
 from app.services.agent_service import get_agent_service
+from app.services.assessment_service import AssessmentOrchestrator
+from app.services.chat_memory_service import ChatMemoryService
 from app.services.nlp_service import NLPService
 
 router = APIRouter(prefix="/chat", tags=["AI对话"])
+logger = logging.getLogger(__name__)
 
 
 # Store active WebSocket connections
@@ -37,6 +41,28 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+
+def _safe_capture_memory(
+    db: Session,
+    user_id: int,
+    conversation_id: int,
+    message: str,
+    context: Dict,
+    is_sensitive: bool,
+) -> Dict:
+    """Persist safe chat memories without blocking the main assistant reply."""
+    try:
+        return ChatMemoryService(db).capture_user_message(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=message,
+            context=context,
+            is_sensitive=is_sensitive,
+        )
+    except Exception as exc:
+        logger.warning("Failed to update chat memory state: %s", exc)
+        return {"updated": False, "count": 0, "categories": [], "reason": "error"}
 
 
 @router.websocket("/ws/{user_id}")
@@ -64,6 +90,7 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
         while True:
             data = await websocket.receive_json()
             user_message = data.get("message", "")
+            agent_mode = data.get("agent_mode", "auto")
 
             if not user_message:
                 continue
@@ -73,14 +100,32 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
             intent = nlp_service.get_intent(user_message)
             is_sensitive = nlp_service.check_sensitive(user_message)
             nlp_result["intent"] = intent
+            memory_service = ChatMemoryService(db)
+            nlp_result["conversation_memory"] = memory_service.build_prompt_context(
+                user_id=user_id,
+                session_id=session_id,
+                query_message=user_message,
+            )
+
+            assessment = AssessmentOrchestrator(db)
+            should_record_assessment_answer = assessment.is_awaiting_answer(user_id, session_id)
+            assessment_result = assessment.prepare_turn(
+                user_id=user_id,
+                chat_session_id=session_id,
+                user_message=user_message,
+                context=nlp_result,
+            )
 
             # Get AI response
             response = await agent_service.get_response(
                 user_id=user_id,
                 session_id=session_id,
                 user_message=user_message,
-                context=nlp_result
+                context=nlp_result,
+                agent_mode=agent_mode,
             )
+            if assessment_result.assessment_prompt_hint:
+                response["message"] = f"{response['message']}\n\n{assessment_result.assessment_prompt_hint}"
 
             last_turn = db.query(func.max(Conversation.turn_number)).filter(
                 Conversation.user_id == user_id,
@@ -111,6 +156,22 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
             )
             db.add(assistant_conv)
             db.commit()
+            db.refresh(conversation)
+            if should_record_assessment_answer:
+                assessment.record_user_answer(
+                    user_id=user_id,
+                    chat_session_id=session_id,
+                    user_message=user_message,
+                    conversation_id=conversation.id,
+                )
+            memory_state = _safe_capture_memory(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation.id,
+                message=user_message,
+                context=nlp_result,
+                is_sensitive=is_sensitive,
+            )
 
             # Send response
             await websocket.send_json({
@@ -120,7 +181,9 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
                 "intent": response.get("intent", "general"),
                 "is_sensitive": is_sensitive,
                 "suggestions": response.get("suggestions", []),
-                "risk_level": response.get("state", {}).get("risk_level", "low")
+                "risk_level": response.get("state", {}).get("risk_level", "low"),
+                "assessment_state": assessment_result.assessment_state,
+                "memory_state": memory_state,
             })
 
     except WebSocketDisconnect:
@@ -185,6 +248,7 @@ async def send_chat_message(
     user_id: int = 1,
     session_id: str = None,
     cycle_phase: str = None,
+    agent_mode: str = "auto",
     db: Session = Depends(get_db)
 ):
     """直接发送消息获取AI回复（REST API，非WebSocket）"""
@@ -206,14 +270,32 @@ async def send_chat_message(
         "cycle_phase": cycle_phase,
         "sensor_data": {}
     }
+    memory_service = ChatMemoryService(db)
+    context["conversation_memory"] = memory_service.build_prompt_context(
+        user_id=user_id,
+        session_id=session_id,
+        query_message=message,
+    )
+
+    assessment = AssessmentOrchestrator(db)
+    should_record_assessment_answer = assessment.is_awaiting_answer(user_id, session_id)
+    assessment_result = assessment.prepare_turn(
+        user_id=user_id,
+        chat_session_id=session_id,
+        user_message=message,
+        context=context,
+    )
 
     # 获取AI响应（使用新的Agent系统）
     response = await agent_service.get_response(
         user_id=user_id,
         session_id=session_id,
         user_message=message,
-        context=context
+        context=context,
+        agent_mode=agent_mode,
     )
+    if assessment_result.assessment_prompt_hint:
+        response["message"] = f"{response['message']}\n\n{assessment_result.assessment_prompt_hint}"
 
     last_turn = db.query(func.max(Conversation.turn_number)).filter(
         Conversation.user_id == user_id,
@@ -242,6 +324,22 @@ async def send_chat_message(
     db.add(user_conv)
     db.add(assistant_conv)
     db.commit()
+    db.refresh(user_conv)
+    if should_record_assessment_answer:
+        assessment.record_user_answer(
+            user_id=user_id,
+            chat_session_id=session_id,
+            user_message=message,
+            conversation_id=user_conv.id,
+        )
+    memory_state = _safe_capture_memory(
+        db=db,
+        user_id=user_id,
+        conversation_id=user_conv.id,
+        message=message,
+        context=context,
+        is_sensitive=is_sensitive,
+    )
 
     return {
         "session_id": session_id,
@@ -249,7 +347,10 @@ async def send_chat_message(
         "intent": response.get("intent", "general"),
         "risk_level": response.get("state", {}).get("risk_level", "low"),
         "suggestions": response.get("suggestions", []),
-        "is_sensitive": is_sensitive
+        "actions": response.get("actions", []),
+        "is_sensitive": is_sensitive,
+        "assessment_state": assessment_result.assessment_state,
+        "memory_state": memory_state,
     }
 
 

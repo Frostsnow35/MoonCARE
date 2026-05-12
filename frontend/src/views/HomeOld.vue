@@ -122,7 +122,7 @@
         </router-link>
       </div>
 
-      <!-- PMS Screening Card -->
+      <!-- 经前状态了解 Card -->
       <div class="px-4 mt-4">
         <div
           class="flex items-center gap-3 p-4 w-full bg-gradient-to-r from-pink-100 to-pink-50 rounded-2xl border border-pink-200 active:scale-[0.98] transition-transform cursor-pointer"
@@ -130,7 +130,7 @@
         >
           <span class="text-4xl">🩷</span>
           <div class="flex-1">
-            <div class="font-semibold text-gray-800">PMS情绪筛查</div>
+            <div class="font-semibold text-gray-800">经前状态聊聊</div>
             <div class="text-xs text-gray-500">了解你的情绪状态</div>
           </div>
           <span class="text-pink-400">→</span>

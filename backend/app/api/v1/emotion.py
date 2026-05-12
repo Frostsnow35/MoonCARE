@@ -88,7 +88,7 @@ async def get_current_phase(
     phase_info = {
         "follicular": {"name": "卵泡期", "days": "第1-7天", "description": "精力恢复期"},
         "ovulation": {"name": "排卵期", "days": "第8-14天", "description": "情绪高峰期"},
-        "luteal": {"name": "黄体期", "days": "第15-28天", "description": "注意PMS症状"},
+        "luteal": {"name": "黄体期", "days": "第15-28天", "description": "留意经前不适"},
         "menstrual": {"name": "经期", "days": "出血日", "description": "注意休息"},
         "unknown": {"name": "未知", "days": "-", "description": "数据不足"}
     }

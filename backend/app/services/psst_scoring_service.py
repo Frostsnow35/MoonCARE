@@ -3,8 +3,8 @@ from typing import Dict, Any
 
 class PSSTScoringService:
     """
-    MVP 版 PSST 风格筛查：
-    - 不做逐题显式作答
+    MVP 版 PMS 维度参考评估：
+    - 不做显性量表或正式检验
     - 根据用户文本提取 signals
     - 再映射成简化版 0~3 分
     - 输出三档：

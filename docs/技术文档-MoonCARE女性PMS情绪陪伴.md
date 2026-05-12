@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-**聆月 LunaCARE** 是一款专注于女性情绪健康管理的智能应用，通过整合生理数据监测、月经周期追踪、AI对话陪伴和PMS情绪筛查，为女性用户提供全方位的情绪支持服务。
+**聆月 LunaCARE** 是一款专注于女性情绪健康管理的智能应用，通过整合生理数据监测、月经周期追踪、AI对话陪伴和经前状态了解，为女性用户提供全方位的情绪支持服务。
 
 ### 核心功能
 
@@ -11,7 +11,7 @@
 | 情绪追踪 | 结合HRV、体温、运动数据的多维情绪分析 |
 | 周期预测 | 加权移动平均算法预测月经周期 |
 | AI对话 | 多Agent系统驱动的智能情绪陪伴 |
-| PMS筛查 | 6轮访谈式的Premenstrual Syndrome评估 |
+| 经前状态了解 | 借鉴PMS相关问题，在自然聊天中非显性了解用户状态 |
 | 音乐疗愈 | 基于情绪状态的音乐推荐 |
 | 呼吸引导 | 心理疏导呼吸练习 |
 
@@ -123,7 +123,7 @@ medium_keywords = ["烦躁", "难受", "想哭", "崩溃", "焦虑"]
 
 ```python
 async def analyze(self, user_id: int, days: int = 7) -> Dict:
-    # 从4个维度收集数据
+    # 从5个维度收集数据
     # 1. HRV指标（过去72小时）
     hrv_data = self._get_hrv_metrics(...)
     # 2. 皮肤温度趋势
@@ -132,6 +132,8 @@ async def analyze(self, user_id: int, days: int = 7) -> Dict:
     keyword_density = self._get_keyword_density(...)
     # 4. 对话中负面情绪比例
     negative_ratio = self._get_negative_emotion_ratio(...)
+    # 5. 聊天式经前状态画像信号
+    assessment_signal = self._get_assessment_signal_score(...)
 
     return {
         "phase": phase,           # follicular/ovulation/luteal/menstrual
@@ -149,7 +151,12 @@ async def analyze(self, user_id: int, days: int = 7) -> Dict:
 | HRV趋势 | +0.15 | 负趋势 < -5 |
 | 体温上升 | +0.15 | 体温 > 0.5℃ |
 | 关键词密度 | +0.2 | 高密度负面词 |
-| 负面情绪比 | +0.15 | 比值 > 0.5 |
+| 负面情绪比 | +0.15 | 来自用户对话 `sentiment_score`，比值 > 0.5 |
+| 经前状态画像 | +0.20 | 聊天式状态观察至少覆盖情绪/身体/功能影响中的2类 |
+
+> 变更日期：2026-05-12  
+> 影响范围：`EmotionEngine` 情绪融合权重、聊天式经前状态画像输入。  
+> 状态：已完成基础接入，仍需要结合更多真实样本验证权重合理性。
 
 ---
 
@@ -181,11 +188,13 @@ SENSITIVE_KEYWORDS = [
 
 ---
 
-### 4. PSST经前综合征筛查
+### 4. 经前状态非显性评估
 
-采用**6轮渐进式访谈**评估PMS严重程度：
+采用**自然聊天式渐进了解**，借鉴PMS相关维度观察经前情绪、身体感受与生活影响。该能力不等同于正式筛查、检验或诊断，仅用于生成参考小结和陪伴建议。
 
-#### 评估维度（18个信号）
+当前实现将该能力接入聊天主流程：系统在 `/api/v1/chat` 中维护隐藏评估状态，必要时由情绪宝宝自然追问，并把用户回答结构化为经前状态画像。该画像仅用于陪伴建议和 `EmotionEngine` 参考分析，不作为正式筛查、检验或诊断依据。
+
+#### 参考维度（18个信号）
 
 | 类别 | 数量 | 内容 |
 |------|------|------|
@@ -388,8 +397,8 @@ const chatStore = {
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/interview/start` | POST | 开始PMS筛查访谈 |
-| `/interview/turn` | POST | 继续访谈（6轮） |
+| `/interview/start` | POST | 开始经前状态了解对话 |
+| `/interview/turn` | POST | 继续经前状态了解对话 |
 | `/interview/knowledge` | POST | 知识问答 |
 
 ---
@@ -479,7 +488,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 | `backend/app/agents/llm_service.py` | LLM服务封装 |
 | `backend/app/agents/support_agent.py` | 日常情绪陪伴Agent |
 | `backend/app/agents/intervention_agent.py` | 危机干预Agent |
-| `backend/app/agents/interview_agent.py` | PMS访谈Agent |
+| `backend/app/agents/interview_agent.py` | 经前状态了解Agent |
 | `backend/app/agents/knowledge_agent.py` | RAG知识问答Agent |
 | `backend/app/agents/perception_agent.py` | 风险感知Agent |
 | `backend/app/services/emotion_engine.py` | 综合情绪分析引擎 |
@@ -509,7 +518,104 @@ HealthAI项目展示了如何将**多Agent系统**、**多维度情绪分析**�
 1. **智能路由系统**：基于风险分级的动态Agent选择
 2. **多模态融合**：整合生理信号、文本日记、对话历史
 3. **RAG增强问答**：结合向量检索和LLM生成
-4. **渐进式访谈**：自然语言交互式的PMS评估
+4. **自然聊天式状态了解**：借鉴PMS相关问题，但不做正式筛查或诊断
 5. **危机干预机制**：及时发现并处理高风险情况
 
 项目的技术难点主要集中在多源数据融合、Agent人格一致性保持、以及危机检测的准确性上，通过精心设计的算法和prompt策略有效解决了这些问题。
+---
+
+## 聊天长期记忆与 Agent 模式引导
+
+> 变更日期：2026-05-12  
+> 影响范围：`/api/v1/chat/message`、`WS /api/v1/chat/ws/{user_id}`、`AgentService`、`SupportAgent`、`KnowledgeAgent`、`chatStore`  
+> 状态：已完成基础接入，仍需在真实用户样本中验证记忆抽取质量与提示语边界。
+
+### 设计目标
+
+聊天系统在保持“危机优先、非诊断、仅供参考”的前提下，新增两类上下文：
+
+| 上下文 | 来源 | 用途 | 风险控制 |
+|------|------|------|----------|
+| 最近上下文 | 当前 `Conversation` session 的最近消息 | 让模型延续多轮对话，不要求用户重复说明 | 限制轮数与单条长度 |
+| 检索上下文 | 当前问题触发的历史 `Conversation` 轻量检索 | 处理“这/它/刚才那个”等指代追问 | 过滤敏感/危机文本，限制检索条数 |
+| 长期记忆 | `chat_memories` 表中的用户偏好、情绪特点、经前体验摘要 | 让模型自然参考用户偏好与特点 | 只保存摘要；危机/敏感文本不写入普通记忆 |
+
+### 数据结构
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `user_id` | `int` | - | 记忆所属用户 |
+| `category` | `str` | - | `preference`、`premenstrual_trait`、`emotional_trait`、`personal_fact` |
+| `key` | `str` | - | 稳定记忆键，如 `music_preference`、`guidance_style` |
+| `value` | `text` | - | 最小必要摘要，不保存完整聊天原文 |
+| `confidence` | `float` | `0.6` | 规则抽取置信度 |
+| `source_conversation_id` | `int?` | `null` | 来源消息 ID |
+| `last_seen_at` | `datetime` | 当前时间 | 最近一次被用户表达或更新的时间 |
+
+### Agent 模式侧重点
+
+| 模式 | 侧重点 | 安全边界 |
+|------|--------|----------|
+| `auto` 自动陪伴 | Router 根据风险、问题类型和用户表达在陪伴/知识间切换 | high/crisis 始终覆盖模式偏好 |
+| `support` 情绪宝宝 | 先共情，再结合记忆里的偏好或特点，给一个小问题或一个小行动建议 | 不做诊断，不把记忆说成结论 |
+| `knowledge` 知识宝宝 | 优先解释 PMS、周期、情绪波动等知识，可用记忆调整解释角度 | 仅供参考；知识库缺失时说明“暂时没有相关信息” |
+
+### API / WebSocket 字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `memory_state` | `object?` | `null` | 服务端返回的轻量记忆状态 |
+| `memory_state.updated` | `bool` | `false` | 本轮是否写入或更新安全记忆 |
+| `memory_state.count` | `int` | `0` | 当前用户已保存的记忆条数 |
+| `memory_state.categories` | `list[str]` | `[]` | 本轮更新的记忆分类 |
+| `memory_state.retrieved_turns` | `int` | `0` | 本轮为 RAG 上下文检索到的历史片段数量 |
+| `memory_state.needs_context_resolution` | `bool` | `false` | 当前问题是否疑似依赖“这/它/刚才那个”等上下文指代 |
+
+### 安全注意点
+
+- 检测到自杀、自残、轻生等表达时，聊天记忆服务不会写入普通长期记忆，回复仍由安全路由接管。
+- 记忆抽取使用保守规则，只保存“少量建议、一步一步来”“经前常睡不好”等短摘要。
+- 对话历史 RAG 使用 `user_id + session_id` 范围内的 `Conversation`，不会跨用户检索；带敏感标记或危机信号的用户消息不进入普通检索片段。
+- LLM 调用现在按 `system + 最近/检索到的历史 messages + 当前用户问题` 组织，而不是只把历史塞进 system prompt。
+- 前端继续使用 Vue 文本插值渲染消息，不使用 `v-html`。
+- 当前 `user_id=1` 仍是开发期兼容写法；真实部署前必须接入 JWT 用户上下文，避免越权读取记忆。
+- 记忆抽取暂不改变 `EmotionEngine` 权重；若后续把长期记忆纳入情绪融合算法，需要同步更新权重说明与测试样本。
+
+---
+
+## 聊天 Agent 经期语义承接修复
+
+> 变更日期：2026-05-13  
+> 影响范围：`SupportAgent`、`PerceptionAgent`、`AgentService`、`LLMService`、`support_prompt.txt`、`backend/tests/test_p0_safety_and_prompts.py`  
+> 状态：已完成后端规则与 prompt 修复；需要在真实对话样本中继续验证语气自然度。
+
+### 设计目标
+
+本次修复针对普通聊天中“难过、想哭、不适、痛经、例假来了、肚子绞痛”等表达的承接质量。系统不把这类表达直接归因为普通情绪波动，而是在非危机场景中优先理解为可能的身体-情绪复合体验：先承接，再轻问身体状态，再给一个低压力、具象的小支持。
+
+该能力仍不等同于 PMS 筛查、医学诊断或心理诊断。所有涉及经前、经期、PMS、痛经、激素波动的回复只作为陪伴和自我观察参考。
+
+### 行为变化
+
+| 场景 | 已完成行为 | 安全边界 |
+|------|------------|----------|
+| 普通难过 / 想哭 | 先命名和承接感受，再轻问是否与经前、经期或身体状态有关 | 不直接建议专业求助，不诊断 |
+| 例假 / 痛经 / 肚子绞痛 | 优先提供热敷、温水、蜷起来休息等具象支持 | 如果疼痛严重、持续或异常，提醒线下就医仅作参考 |
+| 焦虑 / 惊慌 | 可提供呼吸放松等稳定动作 | 不把所有难过都急救化 |
+| 自杀 / 自残 / 轻生 | 仍由 `PerceptionAgent` + `Router` 强制进入 `InterventionAgent` 或安全兜底 | 不受 `agent_mode`、记忆或经期语义线索覆盖 |
+| LLM 标签残留 | 清理 `_chatting_`、`<think>`、`assistant:`、`情绪宝宝：` 等元标签 | 只清洗常见生成残留，避免修改用户语义 |
+
+### 内部状态字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `support_context` | `object` | `{}` | PerceptionAgent 输出的轻量陪伴语境 |
+| `support_context.menstrual_related` | `bool` | `false` | 是否可能与经前、经期或身体不适有关 |
+| `support_context.body_signals` | `list[str]` | `[]` | `pain`、`bloating`、`fatigue`、`sleep_change`、`appetite` |
+| `support_context.emotion_signals` | `list[str]` | `[]` | `sad`、`tearful`、`irritable`、`anxious`、`helpless` |
+
+### 需要验证
+
+- 真实用户对“是不是正好在经前或例假这几天？”这类追问的接受度。
+- 不同模型对 `support_prompt.txt` 的执行稳定性，尤其是是否仍会提前输出专业求助。
+- 具象支持建议是否需要按用户偏好和禁忌继续个性化。

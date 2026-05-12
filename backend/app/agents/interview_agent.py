@@ -1,9 +1,12 @@
+from app.utils.safety import contains_crisis_signal
+
+
 class InterviewAgent:
     MAX_ASSISTANT_TURNS = 6
 
     def start(self):
         return (
-            "嗨，欢迎来到她语 MoonCARE。第一次见面，我想先慢慢了解一下你在经前那几天的状态。\n\n"
+            "嗨，欢迎来到她语 MoonCARE。第一次见面，我想先慢慢了解一下你最近经前那几天的状态。\n\n"
             "不用担心没有标准答案，就像平时聊天一样就好。\n\n"
             "最近那几天，你更像是哪种感觉：容易被点着，还是一直有点绷着、压着？"
         )
@@ -56,10 +59,8 @@ class InterviewAgent:
             )
 
     def detect_crisis(self, messages):
-        # 简单关键词检测（你原本应该已经有）
-        crisis_words = ["不想活", "想死", "活不下去", "结束自己"]
         for m in messages:
             if m.role == "user":
-                if any(w in m.content for w in crisis_words):
+                if contains_crisis_signal(m.content):
                     return True
         return False

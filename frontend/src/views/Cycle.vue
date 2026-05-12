@@ -344,7 +344,7 @@ const currentPhaseDescription = computed(() => {
   const descs = {
     follicular: '身体状态恢复中',
     ovulation: '情绪和精力较好',
-    luteal: '注意PMS症状',
+    luteal: '留意经前不适',
     menstrual: '注意休息保暖'
   }
   return descs[prediction.value.current_phase] || ''

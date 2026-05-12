@@ -136,7 +136,7 @@
         </div>
       </div>
 
-      <!-- 波动曲线 & PMS筛查 -->
+      <!-- 波动曲线 & 经前状态了解 -->
       <div class="px-4 mt-4 grid grid-cols-2 gap-3">
         <router-link
           to="/wave"
@@ -150,7 +150,7 @@
           class="flex flex-col items-center justify-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform cursor-pointer"
         >
           <span class="text-2xl">🩷</span>
-          <span class="text-xs text-gray-700">PMS筛查</span>
+          <span class="text-xs text-gray-700">经前状态聊聊</span>
         </div>
       </div>
 

@@ -11,6 +11,8 @@ from typing import Dict, Optional, List
 import json
 
 from app.models.biometric import BiometricData
+from app.models.assessment import AssessmentObservation
+from app.models.conversation import Conversation
 from app.models.mood import MoodDiary
 from app.models.menstrual import MenstrualRecord
 from app.config import settings
@@ -46,6 +48,9 @@ class EmotionEngine:
         # 4. Calculate negative emotion ratio from conversations
         negative_ratio = self._get_negative_emotion_ratio(user_id, start_date, end_date)
 
+        # 4b. Calculate hidden premenstrual assessment signal
+        assessment_signal = self._get_assessment_signal_score(user_id, start_date, end_date)
+
         # 5. Determine current phase
         phase = self._determine_phase(user_id)
 
@@ -53,12 +58,15 @@ class EmotionEngine:
         pms_risk = self._calculate_pms_risk(
             hrv_data, temp_trend, keyword_density, negative_ratio
         )
+        pms_risk = min(1.0, pms_risk + assessment_signal * 0.20)
 
         # 7. Calculate mood level (1-10)
         mood_level = self._calculate_mood_level(keyword_density, negative_ratio, hrv_data)
 
         # 8. Calculate confidence
         confidence = self._calculate_confidence(hrv_data, keyword_density)
+        if assessment_signal > 0:
+            confidence = min(1.0, confidence + 0.1)
 
         return {
             "phase": phase,
@@ -160,9 +168,52 @@ class EmotionEngine:
 
     def _get_negative_emotion_ratio(self, user_id: int, start, end) -> float:
         """获取对话中负向情绪占比"""
-        # This would query conversation data
-        # For now, return a placeholder
-        return 0.0
+        query = self.db.query(Conversation).filter(
+            Conversation.user_id == user_id,
+            Conversation.role == "user",
+            Conversation.sentiment_score.isnot(None),
+        )
+        if start is not None:
+            query = query.filter(Conversation.created_at >= start)
+        if end is not None:
+            query = query.filter(Conversation.created_at <= end)
+
+        conversations = query.all()
+        if not conversations:
+            return 0.0
+
+        negative_count = sum(1 for item in conversations if (item.sentiment_score or 0.0) < -0.2)
+        return negative_count / len(conversations)
+
+    def _get_assessment_signal_score(self, user_id: int, start, end) -> float:
+        """Aggregate hidden assessment observations into a conservative 0-1 signal."""
+        query = self.db.query(AssessmentObservation).join(AssessmentObservation.assessment_session).filter(
+            AssessmentObservation.assessment_session.has(user_id=user_id),
+            AssessmentObservation.crisis_signal == False,  # noqa: E712
+        )
+        if start is not None:
+            query = query.filter(AssessmentObservation.created_at >= start)
+        if end is not None:
+            query = query.filter(AssessmentObservation.created_at <= end)
+
+        observations = query.all()
+        if not observations:
+            return 0.0
+
+        values = []
+        for observation in observations:
+            signal = observation.value or {}
+            numeric_scores = [
+                value
+                for key, value in signal.items()
+                if key not in {"self_harm", "suicidal_ideation", "confidence"} and isinstance(value, int)
+            ]
+            if numeric_scores:
+                values.append(min(1.0, sum(numeric_scores) / (len(numeric_scores) * 3)))
+
+        if not values:
+            return 0.0
+        return sum(values) / len(values)
 
     def _determine_phase(self, user_id: int) -> str:
         """确定当前所处周期阶段"""

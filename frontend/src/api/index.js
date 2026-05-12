@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+const api_base_url = import.meta.env.VITE_API_BASE_URL || 'https://mooncare.onrender.com/api/v1'
+
 const api = axios.create({
-  baseURL: 'https://mooncare.onrender.com/api/v1',
+  baseURL: api_base_url,
   timeout: 60000,  // 60 seconds for LLM API calls
   headers: {
     'Content-Type': 'application/json'
@@ -72,10 +74,11 @@ export const chatAPI = {
   createSession: (userId) => api.post('/chat/session', null, { params: { user_id: userId } }),
   getSessions: (userId) => api.get('/chat/sessions', { params: { user_id: userId } }),
   getHistory: (sessionId) => api.get(`/chat/history/${sessionId}`),
-  sendMessage: (message, userId = 1, sessionId = null, cyclePhase = null) => {
+  sendMessage: (message, userId = 1, sessionId = null, cyclePhase = null, agentMode = 'auto') => {
     const params = { message, user_id: userId }
     if (sessionId) params.session_id = sessionId
     if (cyclePhase) params.cycle_phase = cyclePhase
+    if (agentMode) params.agent_mode = agentMode
     return api.post('/chat/message', null, { params })
   }
 }

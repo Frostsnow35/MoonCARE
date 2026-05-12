@@ -1,9 +1,15 @@
 import os
 import re
-from typing import Optional, Dict, Any
+from pathlib import Path
+from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
+from app.config import settings
+from app.utils.prompt_loader import render_prompt
 
-load_dotenv()
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = BACKEND_ROOT.parent
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(BACKEND_ROOT / ".env", override=True)
 
 try:
     from openai import OpenAI
@@ -17,28 +23,34 @@ class LLMService:
     def __init__(self):
         if not OPENAI_AVAILABLE:
             raise ImportError("openai package not installed. Please install with: pip install openai")
-        nvidia_api_key = os.getenv("NVIDIA_API_KEY")
-        nvidia_base_url = os.getenv("NVIDIA_BASE_URL")
-        nvidia_model = os.getenv("NVIDIA_MODEL_NAME")
+        
+        nvidia_api_key = os.getenv("NVIDIA_API_KEY", "").strip()
+        nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "").strip()
+        nvidia_model = os.getenv("NVIDIA_MODEL_NAME", "").strip()
 
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        openai_base_url = os.getenv("OPENAI_BASE_URL")
-        openai_model = os.getenv("MODEL_NAME", "MiniMax-M2.7")
+        openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        openai_base_url = os.getenv("OPENAI_BASE_URL", "").strip()
+        openai_model = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
 
-        use_nvidia = any([nvidia_api_key, nvidia_base_url, nvidia_model])
+        use_nvidia = bool(nvidia_api_key)       
 
         if use_nvidia:
-            api_key = nvidia_api_key or openai_api_key
-            base_url = self._normalize_openai_compatible_base_url(nvidia_base_url or openai_base_url)
-            self.model = nvidia_model or "mistralai/mistral-large"
+            api_key = nvidia_api_key
+            base_url = self._normalize_openai_compatible_base_url(nvidia_base_url or settings.NVIDIA_BASE_URL)
+            self.model = nvidia_model or settings.NVIDIA_MODEL_NAME
+            print(f"[LLMService] Using NVIDIA API with model: {self.model}")
         else:
+            if not openai_api_key:
+                raise ValueError("Either NVIDIA_API_KEY or OPENAI_API_KEY must be set in .env")
             api_key = openai_api_key
-            base_url = openai_base_url
+            base_url = openai_base_url or settings.OPENAI_BASE_URL
             self.model = openai_model
+            print(f"[LLMService] Using OpenAI API with model: {self.model}")
 
         self.client = OpenAI(
             api_key=api_key,
             base_url=base_url,
+            timeout=35.0,
         )
 
     def _normalize_openai_compatible_base_url(self, base_url: Optional[str]) -> Optional[str]:
@@ -52,58 +64,88 @@ class LLMService:
     def _clean_response(self, text: str) -> str:
         if not text:
             return ""
-        # Remove think tags
+
+        # Remove hidden reasoning and model/control tags before showing text.
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.S | re.I)
+        text = re.sub(r"</?think>", "", text, flags=re.I)
+        text = re.sub(r"\b_chatting_\b", "", text, flags=re.I)
 
-        # 去掉一些常见"思维暴露"前缀
-        noisy_prefixes = [
-            r"^思考过程[:：]\s*",
-            r"^推理过程[:：]\s*",
-            r"^分析[:：]\s*",
-        ]
-        for pattern in noisy_prefixes:
-            text = re.sub(pattern, "", text, flags=re.I)
+        prefix_pattern = (
+            r"^\s*(?:"
+            r"assistant|Assistant|AI|MoonCARE|"
+            r"情绪宝宝|守护宝宝|知识宝宝|她语|"
+            r"一句话回应|简单的解释|解释|回答|回应|回复|Note|注意"
+            r")\s*[：:]\s*"
+        )
 
-        return text.strip()
+        previous = None
+        while previous != text:
+            previous = text
+            text = re.sub(prefix_pattern, "", text, flags=re.M | re.I)
+            text = re.sub(r"^\s*\d+[.、]\s*", "", text, flags=re.M)
+            text = re.sub(r"^\s*[-*•]\s*", "", text, flags=re.M)
+            text = text.strip()
+
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text
 
     def generate_reply(self, user_message: str, context: Optional[Dict[str, Any]] = None) -> str:
         context = context or {}
 
-        # 优先使用外部传入的人设 prompt
         if context.get("raw_system_prompt"):
             system_prompt = context["raw_system_prompt"]
         else:
             cycle_phase = context.get("cycle_phase", "未知")
             risk_level = context.get("risk_level", "low")
 
-            system_prompt = f"""
-你是"她语 MoonCARE"的温柔情绪陪伴助手。
+            system_prompt = render_prompt(
+                "default_chat_prompt.txt",
+                cycle_phase=cycle_phase,
+                risk_level=risk_level,
+                memory_context=context.get("memory_context", "暂无可用长期记忆。"),
+                recent_context=context.get("recent_context", "暂无最近对话。"),
+                retrieved_context=context.get("retrieved_context", "暂无检索片段。"),
+                mode_guidance=context.get("mode_guidance", ""),
+            )
 
-当前用户状态：
-- 周期阶段：{cycle_phase}
-- 风险等级：{risk_level}
-
-回答要求：
-1. 温柔，自然、口语化。
-2. 不要说教，不要像客服。
-3. 尽量控制在 2~4 句。
-4. 先接住情绪，再轻轻回应。
-5. 不要输出思维过程，不要出现 think 标签。
-"""
+        messages = self._build_messages(system_prompt, user_message, context)
 
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.7,
+            messages=messages,
+            temperature=0.85,
+            max_tokens=320,
         )
 
         text = response.choices[0].message.content or ""
         text = self._clean_response(text)
 
         if not text:
-            return "我在这里。你可以慢一点，再跟我说说现在最难受的那一部分。"
+            return "我在这里。你可以说一点，再跟我说现在最难忍受的那一部分。"
 
         return text
+
+    def _build_messages(
+        self,
+        system_prompt: str,
+        user_message: str,
+        context: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        """Build chat-completion messages with bounded prior conversation turns."""
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+
+        for item in context.get("conversation_messages") or []:
+            role = item.get("role")
+            content = self._truncate_message(item.get("content", ""))
+            if role in {"user", "assistant"} and content:
+                messages.append({"role": role, "content": content})
+
+        messages.append({"role": "user", "content": user_message})
+        return messages
+
+    def _truncate_message(self, text: str, limit: int = 500) -> str:
+        """Bound historical message length before sending it to the model."""
+        normalized = " ".join((text or "").split())
+        if len(normalized) <= limit:
+            return normalized
+        return f"{normalized[: limit - 1]}…"

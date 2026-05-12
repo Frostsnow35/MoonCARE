@@ -19,7 +19,9 @@ from app.models.biometric import BiometricData
 from app.models.menstrual import MenstrualRecord
 from app.models.mood import MoodDiary
 from app.models.conversation import Conversation
+from app.models.chat_memory import ChatMemory
 from app.models.music import Music
+from app.models.assessment import AssessmentObservation, AssessmentSession
 
 
 @asynccontextmanager
