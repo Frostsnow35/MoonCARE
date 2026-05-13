@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     NVIDIA_API_KEY: Optional[str] = None
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-    NVIDIA_MODEL_NAME: str = "meta/llama-3.2-3b-instruct"
+    NVIDIA_MODEL_NAME: str = "z-ai/glm-5.1"
 
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"

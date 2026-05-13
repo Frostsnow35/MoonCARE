@@ -114,8 +114,8 @@ class VLLMIntegrationTests(unittest.TestCase):
         self.assertEqual(kwargs["api_key"], "test-key")
         self.assertEqual(kwargs["base_url"], "http://127.0.0.1:30000/v1")
 
-    def test_07_nvidia_provider_rejects_glm_model_name(self):
-        """GLM model names must not be sent to NVIDIA Integrate endpoints."""
+    def test_07_nvidia_provider_normalizes_glm_model_short_name(self):
+        """NVIDIA GLM short names map to the exact Integrate model id."""
         from app.agents.llm_service import LLMService
 
         with patch.dict(os.environ, {
@@ -124,8 +124,13 @@ class VLLMIntegrationTests(unittest.TestCase):
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
             "NVIDIA_MODEL_NAME": "glm-5.1",
         }, clear=False):
-            with self.assertRaisesRegex(ValueError, "glm-5.1 is not a NVIDIA"):
-                LLMService()
+            with patch("app.agents.llm_service.OpenAI") as mock_openai:
+                service = LLMService()
+
+        self.assertEqual(service.model, "z-ai/glm-5.1")
+        mock_openai.assert_called_once()
+        kwargs = mock_openai.call_args.kwargs
+        self.assertEqual(kwargs["base_url"], "https://integrate.api.nvidia.com/v1")
 
     def test_08_zai_provider_uses_glm_endpoint_without_v1_suffix(self):
         """Z.AI GLM endpoint is already a complete OpenAI-compatible API root."""

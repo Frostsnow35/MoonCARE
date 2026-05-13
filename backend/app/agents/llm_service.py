@@ -12,6 +12,13 @@ except ImportError:
     OpenAI = None
 
 
+_NVIDIA_MODEL_ALIASES = {
+    "glm-5.1": "z-ai/glm-5.1",
+    "glm5.1": "z-ai/glm-5.1",
+    "z-ai/glm5.1": "z-ai/glm-5.1",
+}
+
+
 class LLMService:
     def __init__(self):
         if not OPENAI_AVAILABLE:
@@ -72,13 +79,9 @@ class LLMService:
             base_url = self._normalize_openai_compatible_base_url(
                 os.getenv("NVIDIA_BASE_URL", settings.NVIDIA_BASE_URL)
             )
-            self.model = os.getenv("NVIDIA_MODEL_NAME", settings.NVIDIA_MODEL_NAME)
-            if self.model.lower().startswith("glm"):
-                raise ValueError(
-                    "Invalid LLM config: glm-5.1 is not a NVIDIA Integrate model. "
-                    "Set LLM_PROVIDER=zai with ZAI_API_KEY/ZAI_BASE_URL, or set "
-                    "NVIDIA_MODEL_NAME to a valid NVIDIA model."
-                )
+            self.model = self._normalize_nvidia_model_name(
+                os.getenv("NVIDIA_MODEL_NAME", settings.NVIDIA_MODEL_NAME)
+            )
             print(f"[LLMService] Using NVIDIA API with model: {self.model}")
             
         else:
@@ -113,6 +116,11 @@ class LLMService:
             if value and str(value).strip():
                 return str(value).strip()
         return None
+
+    def _normalize_nvidia_model_name(self, model_name: str) -> str:
+        """Map friendly NVIDIA catalog names to the exact Integrate model id."""
+        normalized = (model_name or "").strip()
+        return _NVIDIA_MODEL_ALIASES.get(normalized.lower(), normalized)
 
     def _clean_response(self, text: str) -> str:
         if not text:

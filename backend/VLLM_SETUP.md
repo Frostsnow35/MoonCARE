@@ -141,9 +141,20 @@ LLM_REQUEST_TIMEOUT_SECONDS=18
 CHAT_AGENT_REPLY_TIMEOUT_SECONDS=18
 ```
 
+### NVIDIA NIM GLM-5.1
+NVIDIA Integrate exposes GLM-5.1 with the exact model id `z-ai/glm-5.1`.
+The backend also accepts the friendly short name `glm-5.1` and normalizes it.
+
+```env
+LLM_PROVIDER=nvidia
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_MODEL_NAME=z-ai/glm-5.1
+LLM_REQUEST_TIMEOUT_SECONDS=18
+CHAT_AGENT_REPLY_TIMEOUT_SECONDS=18
+```
+
 ### Z.AI / Zhipu GLM-5.1
-GLM-5.1 must not be sent to the NVIDIA Integrate endpoint. Use the Z.AI
-provider with a real Z.AI/Zhipu API key:
+Use this provider only when calling Z.AI/Zhipu directly instead of NVIDIA:
 
 ```env
 LLM_PROVIDER=zai
