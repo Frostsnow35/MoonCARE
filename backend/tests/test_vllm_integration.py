@@ -131,6 +131,7 @@ class VLLMIntegrationTests(unittest.TestCase):
         mock_openai.assert_called_once()
         kwargs = mock_openai.call_args.kwargs
         self.assertEqual(kwargs["base_url"], "https://integrate.api.nvidia.com/v1")
+        self.assertEqual(kwargs["max_retries"], 0)
 
     def test_08_zai_provider_uses_glm_endpoint_without_v1_suffix(self):
         """Z.AI GLM endpoint is already a complete OpenAI-compatible API root."""

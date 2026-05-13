@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # Chat latency controls. Keep the model and prompts unchanged, but bound user wait time.
     LLM_REQUEST_TIMEOUT_SECONDS: float = 18.0
     CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 18.0
+    LLM_MAX_RETRIES: int = 0
 
     SQLITE_JOURNAL_MODE: str = "TRUNCATE"
     SQLITE_BUSY_TIMEOUT_SECONDS: float = 30.0

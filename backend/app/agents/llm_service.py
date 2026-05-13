@@ -94,6 +94,7 @@ class LLMService:
             api_key=api_key,
             base_url=base_url,
             timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
+            max_retries=settings.LLM_MAX_RETRIES,
         )
 
     def _normalize_openai_compatible_base_url(self, base_url: Optional[str]) -> Optional[str]:
