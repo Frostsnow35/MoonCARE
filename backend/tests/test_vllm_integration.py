@@ -88,7 +88,7 @@ class VLLMIntegrationTests(unittest.TestCase):
         """测试多种提供方配置已就绪"""
         from app.config import settings
         
-        providers = ['nvidia', 'openai', 'vllm', 'accelerated']
+        providers = ['nvidia', 'openai', 'vllm', 'accelerated', 'zai']
         for provider in providers:
             print(f"  [OK] 支持提供方: {provider}")
         
@@ -113,6 +113,38 @@ class VLLMIntegrationTests(unittest.TestCase):
         kwargs = mock_openai.call_args.kwargs
         self.assertEqual(kwargs["api_key"], "test-key")
         self.assertEqual(kwargs["base_url"], "http://127.0.0.1:30000/v1")
+
+    def test_07_nvidia_provider_rejects_glm_model_name(self):
+        """GLM model names must not be sent to NVIDIA Integrate endpoints."""
+        from app.agents.llm_service import LLMService
+
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "nvidia",
+            "NVIDIA_API_KEY": "nvapi-test",
+            "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
+            "NVIDIA_MODEL_NAME": "glm-5.1",
+        }, clear=False):
+            with self.assertRaisesRegex(ValueError, "glm-5.1 is not a NVIDIA"):
+                LLMService()
+
+    def test_08_zai_provider_uses_glm_endpoint_without_v1_suffix(self):
+        """Z.AI GLM endpoint is already a complete OpenAI-compatible API root."""
+        from app.agents.llm_service import LLMService
+
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "zai",
+            "ZAI_API_KEY": "test-zai-key",
+            "ZAI_BASE_URL": "https://api.z.ai/api/paas/v4/",
+            "ZAI_MODEL_NAME": "glm-5.1",
+        }, clear=False):
+            with patch("app.agents.llm_service.OpenAI") as mock_openai:
+                service = LLMService()
+
+        self.assertEqual(service.model, "glm-5.1")
+        mock_openai.assert_called_once()
+        kwargs = mock_openai.call_args.kwargs
+        self.assertEqual(kwargs["api_key"], "test-zai-key")
+        self.assertEqual(kwargs["base_url"], "https://api.z.ai/api/paas/v4")
 
 
 class VLLMQuickStartGuide(unittest.TestCase):

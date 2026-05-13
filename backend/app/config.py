@@ -1,5 +1,15 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
+
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = BACKEND_ROOT.parent
+
+load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(BACKEND_ROOT / ".env", override=True)
 
 
 class Settings(BaseSettings):
@@ -15,7 +25,7 @@ class Settings(BaseSettings):
 
     API_V1_PREFIX: str = "/api/v1"
 
-    # LLM Provider selection: "nvidia", "openai", "vllm"
+    # LLM Provider selection: "nvidia", "openai", "vllm", "accelerated", "zai"
     LLM_PROVIDER: str = "nvidia"
 
     NVIDIA_API_KEY: Optional[str] = None
@@ -43,9 +53,18 @@ class Settings(BaseSettings):
     ACCELERATED_LLM_MODEL_NAME: str = "glm-5.1"
     ACCELERATED_LLM_ENGINE: str = "openai-compatible"
 
+    # Z.AI / Zhipu GLM endpoint. Z.AI uses an OpenAI-compatible SDK surface,
+    # but the base URL is /api/paas/v4 instead of /v1.
+    ZAI_API_KEY: Optional[str] = None
+    ZAI_BASE_URL: str = "https://api.z.ai/api/paas/v4/"
+    ZAI_MODEL_NAME: str = "glm-5.1"
+
     # Chat latency controls. Keep the model and prompts unchanged, but bound user wait time.
     LLM_REQUEST_TIMEOUT_SECONDS: float = 18.0
     CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 18.0
+
+    SQLITE_JOURNAL_MODE: str = "TRUNCATE"
+    SQLITE_BUSY_TIMEOUT_SECONDS: float = 30.0
 
     PMS_RISK_HIGH_THRESHOLD: float = 0.7
     PMS_RISK_CRITICAL_THRESHOLD: float = 0.8

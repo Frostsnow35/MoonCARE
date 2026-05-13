@@ -141,6 +141,19 @@ LLM_REQUEST_TIMEOUT_SECONDS=18
 CHAT_AGENT_REPLY_TIMEOUT_SECONDS=18
 ```
 
+### Z.AI / Zhipu GLM-5.1
+GLM-5.1 must not be sent to the NVIDIA Integrate endpoint. Use the Z.AI
+provider with a real Z.AI/Zhipu API key:
+
+```env
+LLM_PROVIDER=zai
+ZAI_API_KEY=your-zai-key
+ZAI_BASE_URL=https://api.z.ai/api/paas/v4/
+ZAI_MODEL_NAME=glm-5.1
+LLM_REQUEST_TIMEOUT_SECONDS=18
+CHAT_AGENT_REPLY_TIMEOUT_SECONDS=18
+```
+
 该模式不改变 MoonCARE 的 Agent 路由、prompt、记忆上下文或危机干预逻辑，只替换底层模型服务端点。
 
 ## 故障排查

@@ -1,15 +1,8 @@
 import os
 import re
-from pathlib import Path
 from typing import Optional, Dict, Any, List
-from dotenv import load_dotenv
 from app.config import settings
 from app.utils.prompt_loader import render_prompt
-
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-PROJECT_ROOT = BACKEND_ROOT.parent
-load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(BACKEND_ROOT / ".env", override=True)
 
 try:
     from openai import OpenAI
@@ -43,6 +36,24 @@ class LLMService:
             self.model = os.getenv("ACCELERATED_LLM_MODEL_NAME", settings.ACCELERATED_LLM_MODEL_NAME)
             engine = os.getenv("ACCELERATED_LLM_ENGINE", settings.ACCELERATED_LLM_ENGINE)
             print(f"[LLMService] Using accelerated OpenAI-compatible engine ({engine}) with model: {self.model}")
+
+        elif llm_provider in {"zai", "zhipu", "bigmodel", "glm"}:
+            api_key = self._first_nonempty(
+                os.getenv("ZAI_API_KEY"),
+                os.getenv("ZHIPUAI_API_KEY"),
+                os.getenv("BIGMODEL_API_KEY"),
+                os.getenv("GLM_API_KEY"),
+                settings.ZAI_API_KEY,
+            )
+            if not api_key:
+                raise ValueError(
+                    "ZAI_API_KEY must be set for LLM_PROVIDER=zai when using glm-5.1."
+                )
+            base_url = self._normalize_base_url(
+                os.getenv("ZAI_BASE_URL", settings.ZAI_BASE_URL)
+            )
+            self.model = os.getenv("ZAI_MODEL_NAME", settings.ZAI_MODEL_NAME)
+            print(f"[LLMService] Using Z.AI GLM endpoint with model: {self.model}")
             
         elif llm_provider == "openai":
             openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -62,10 +73,19 @@ class LLMService:
                 os.getenv("NVIDIA_BASE_URL", settings.NVIDIA_BASE_URL)
             )
             self.model = os.getenv("NVIDIA_MODEL_NAME", settings.NVIDIA_MODEL_NAME)
+            if self.model.lower().startswith("glm"):
+                raise ValueError(
+                    "Invalid LLM config: glm-5.1 is not a NVIDIA Integrate model. "
+                    "Set LLM_PROVIDER=zai with ZAI_API_KEY/ZAI_BASE_URL, or set "
+                    "NVIDIA_MODEL_NAME to a valid NVIDIA model."
+                )
             print(f"[LLMService] Using NVIDIA API with model: {self.model}")
             
         else:
-            raise ValueError(f"Unknown LLM_PROVIDER: {llm_provider}. Must be one of: nvidia, openai, vllm, accelerated")
+            raise ValueError(
+                f"Unknown LLM_PROVIDER: {llm_provider}. Must be one of: "
+                "nvidia, openai, vllm, accelerated, zai"
+            )
 
         self.client = OpenAI(
             api_key=api_key,
@@ -80,6 +100,19 @@ class LLMService:
         if normalized.endswith("/v1"):
             return normalized
         return f"{normalized}/v1"
+
+    def _normalize_base_url(self, base_url: Optional[str]) -> Optional[str]:
+        """Normalize provider base URLs that are already complete API roots."""
+        if not base_url:
+            return None
+        return base_url.strip().rstrip("/")
+
+    def _first_nonempty(self, *values: Optional[str]) -> Optional[str]:
+        """Return the first non-empty string from environment/config aliases."""
+        for value in values:
+            if value and str(value).strip():
+                return str(value).strip()
+        return None
 
     def _clean_response(self, text: str) -> str:
         if not text:
