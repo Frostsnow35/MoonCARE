@@ -619,3 +619,46 @@ HealthAI项目展示了如何将**多Agent系统**、**多维度情绪分析**�
 - 真实用户对“是不是正好在经前或例假这几天？”这类追问的接受度。
 - 不同模型对 `support_prompt.txt` 的执行稳定性，尤其是是否仍会提前输出专业求助。
 - 具象支持建议是否需要按用户偏好和禁忌继续个性化。
+
+---
+
+## GLM-5.1 聊天响应加速与推理引擎架构
+
+> 变更日期：2026-05-13  
+> 影响范围：`LLMService`、`AgentService`、`/api/v1/chat/message`、`WS /api/v1/chat/ws/{user_id}`、`Chat.vue`、`chatStore`、`VLLM_SETUP.md`  
+> 状态：已完成后端 deadline、前端等待阈值和通用 OpenAI-compatible 加速 provider；需要用真实 GLM-5.1 端点压测首包与最终回复耗时。
+
+### 设计目标
+
+GLM-5.1 推理较慢时，MoonCARE 不能让用户长时间停留在“正在组织回复”。本次调整保留 GLM-5.1 的完整推理路径和现有安全路由，同时增加两层控制：
+
+| 层级 | 已完成能力 | 默认值 | 说明 |
+|------|------------|--------|------|
+| 推理引擎层 | `LLM_PROVIDER=accelerated` | 关闭，需配置启用 | 可指向 vLLM、SGLang、LMDeploy 或内网 OpenAI-compatible GLM 服务 |
+| 服务端等待层 | `CHAT_AGENT_REPLY_TIMEOUT_SECONDS` | `18.0` 秒 | Router/LLM 超时后返回安全承接 fallback |
+| LLM 请求层 | `LLM_REQUEST_TIMEOUT_SECONDS` | `18.0` 秒 | OpenAI-compatible client 的请求超时 |
+| 前端等待层 | `CHAT_REPLY_TIMEOUT_MS` | `22000` 毫秒 | 比后端 deadline 多留网络余量 |
+
+### 加速 provider 配置
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `LLM_PROVIDER` | `str` | `nvidia` | 可选 `nvidia`、`openai`、`vllm`、`accelerated` |
+| `ACCELERATED_LLM_BASE_URL` | `str` | `http://localhost:30000/v1` | 通用 OpenAI-compatible 推理加速端点 |
+| `ACCELERATED_LLM_API_KEY` | `str` | `accelerated-local` | 加速端点鉴权 token |
+| `ACCELERATED_LLM_MODEL_NAME` | `str` | `glm-5.1` | 加速端点暴露的模型名 |
+| `ACCELERATED_LLM_ENGINE` | `str` | `openai-compatible` | 记录底层引擎类型，仅用于日志和排查 |
+
+### API / WebSocket 新增字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `reply_status` | `str` | `ok` | `ok`、`timeout_fallback`、`error_fallback` |
+| `elapsed_ms` | `int` | `0` | 后端本轮 Agent 响应耗时 |
+
+### 安全边界
+
+- 加速 provider 只替换模型服务端点，不绕过 `PerceptionAgent` 和 `Router`。
+- 普通消息超时后返回温柔承接 fallback，提示用户可重试，不冒充 GLM 完整回复。
+- 自杀、自残、轻生等危机表达超时后返回安全兜底，优先确认安全和寻求可信任的人帮助。
+- 后续如接入 streaming 或异步“完整回复补发”，仍必须保留危机优先和非诊断边界。

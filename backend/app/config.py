@@ -15,13 +15,37 @@ class Settings(BaseSettings):
 
     API_V1_PREFIX: str = "/api/v1"
 
+    # LLM Provider selection: "nvidia", "openai", "vllm"
+    LLM_PROVIDER: str = "nvidia"
+
     NVIDIA_API_KEY: Optional[str] = None
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-    NVIDIA_MODEL_NAME: str = "mistralai/mistral-large-3-675b-instruct-2512"
+    NVIDIA_MODEL_NAME: str = "meta/llama-3.2-3b-instruct"
 
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     MODEL_NAME: str = "gpt-3.5-turbo"
+
+    # vLLM local inference (OpenAI-compatible API)
+    VLLM_BASE_URL: str = "http://localhost:8000/v1"
+    VLLM_API_KEY: str = "vllm-local"
+    VLLM_MODEL_NAME: str = "meta/llama-3.2-3b-instruct"
+    VLLM_HOST: str = "0.0.0.0"
+    VLLM_PORT: int = 8000
+    VLLM_GPU_MEMORY_UTILIZATION: float = 0.9
+    VLLM_TENSOR_PARALLEL_SIZE: int = 1
+    VLLM_DTYPE: str = "auto"
+
+    # Generic OpenAI-compatible acceleration engine endpoint.
+    # Can point to vLLM, SGLang, LMDeploy, or an internal GLM-compatible gateway.
+    ACCELERATED_LLM_BASE_URL: str = "http://localhost:30000/v1"
+    ACCELERATED_LLM_API_KEY: str = "accelerated-local"
+    ACCELERATED_LLM_MODEL_NAME: str = "glm-5.1"
+    ACCELERATED_LLM_ENGINE: str = "openai-compatible"
+
+    # Chat latency controls. Keep the model and prompts unchanged, but bound user wait time.
+    LLM_REQUEST_TIMEOUT_SECONDS: float = 18.0
+    CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 18.0
 
     PMS_RISK_HIGH_THRESHOLD: float = 0.7
     PMS_RISK_CRITICAL_THRESHOLD: float = 0.8

@@ -24,33 +24,53 @@ class LLMService:
         if not OPENAI_AVAILABLE:
             raise ImportError("openai package not installed. Please install with: pip install openai")
         
-        nvidia_api_key = os.getenv("NVIDIA_API_KEY", "").strip()
-        nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "").strip()
-        nvidia_model = os.getenv("NVIDIA_MODEL_NAME", "").strip()
+        # Get LLM provider from environment or config
+        llm_provider = os.getenv("LLM_PROVIDER", settings.LLM_PROVIDER).lower().strip()
+        
+        if llm_provider == "vllm":
+            api_key = os.getenv("VLLM_API_KEY", settings.VLLM_API_KEY)
+            base_url = self._normalize_openai_compatible_base_url(
+                os.getenv("VLLM_BASE_URL", settings.VLLM_BASE_URL)
+            )
+            self.model = os.getenv("VLLM_MODEL_NAME", settings.VLLM_MODEL_NAME)
+            print(f"[LLMService] Using vLLM local inference with model: {self.model}")
 
-        openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        openai_base_url = os.getenv("OPENAI_BASE_URL", "").strip()
-        openai_model = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
-
-        use_nvidia = bool(nvidia_api_key)       
-
-        if use_nvidia:
-            api_key = nvidia_api_key
-            base_url = self._normalize_openai_compatible_base_url(nvidia_base_url or settings.NVIDIA_BASE_URL)
-            self.model = nvidia_model or settings.NVIDIA_MODEL_NAME
-            print(f"[LLMService] Using NVIDIA API with model: {self.model}")
-        else:
+        elif llm_provider == "accelerated":
+            api_key = os.getenv("ACCELERATED_LLM_API_KEY", settings.ACCELERATED_LLM_API_KEY)
+            base_url = self._normalize_openai_compatible_base_url(
+                os.getenv("ACCELERATED_LLM_BASE_URL", settings.ACCELERATED_LLM_BASE_URL)
+            )
+            self.model = os.getenv("ACCELERATED_LLM_MODEL_NAME", settings.ACCELERATED_LLM_MODEL_NAME)
+            engine = os.getenv("ACCELERATED_LLM_ENGINE", settings.ACCELERATED_LLM_ENGINE)
+            print(f"[LLMService] Using accelerated OpenAI-compatible engine ({engine}) with model: {self.model}")
+            
+        elif llm_provider == "openai":
+            openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
             if not openai_api_key:
-                raise ValueError("Either NVIDIA_API_KEY or OPENAI_API_KEY must be set in .env")
+                raise ValueError("OPENAI_API_KEY must be set in .env for OpenAI provider")
             api_key = openai_api_key
-            base_url = openai_base_url or settings.OPENAI_BASE_URL
-            self.model = openai_model
+            base_url = os.getenv("OPENAI_BASE_URL", settings.OPENAI_BASE_URL)
+            self.model = os.getenv("MODEL_NAME", settings.MODEL_NAME)
             print(f"[LLMService] Using OpenAI API with model: {self.model}")
+            
+        elif llm_provider == "nvidia":
+            nvidia_api_key = os.getenv("NVIDIA_API_KEY", "").strip()
+            if not nvidia_api_key:
+                raise ValueError("NVIDIA_API_KEY must be set in .env for NVIDIA provider")
+            api_key = nvidia_api_key
+            base_url = self._normalize_openai_compatible_base_url(
+                os.getenv("NVIDIA_BASE_URL", settings.NVIDIA_BASE_URL)
+            )
+            self.model = os.getenv("NVIDIA_MODEL_NAME", settings.NVIDIA_MODEL_NAME)
+            print(f"[LLMService] Using NVIDIA API with model: {self.model}")
+            
+        else:
+            raise ValueError(f"Unknown LLM_PROVIDER: {llm_provider}. Must be one of: nvidia, openai, vllm, accelerated")
 
         self.client = OpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=35.0,
+            timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
         )
 
     def _normalize_openai_compatible_base_url(self, base_url: Optional[str]) -> Optional[str]:
@@ -70,13 +90,24 @@ class LLMService:
         text = re.sub(r"</?think>", "", text, flags=re.I)
         text = re.sub(r"\b_chatting_\b", "", text, flags=re.I)
 
+      # Remove all role prefixes and format markers
         prefix_pattern = (
             r"^\s*(?:"
             r"assistant|Assistant|AI|MoonCARE|"
-            r"情绪宝宝|守护宝宝|知识宝宝|她语|"
-            r"一句话回应|简单的解释|解释|回答|回应|回复|Note|注意"
+            r"情绪宝宝|守护宝宝|知识宝宝|她语|懂懂宝宝|"
+            r"一句话回应|简单的解释|解释|回答|回应|回复|Note|注意|"
+            r"比如|例如|假设|如果|对话范例|示范|"
+            r"用户|你|我"
             r")\s*[：:]\s*"
         )
+
+        # Remove lines that look like examples or instructions
+        example_patterns = [
+            r"^\s*(?:比如|例如|假设|如果|比如你|比如用户).*$",
+            r"^\s*(?:第一句|第二句|第三句|第一步|第二步).*$",
+            r"^\s*(?:像这样|这样说|应该说).*$",
+            r"^\s*(?:对话范例|示范|示例).*$",
+        ]
 
         previous = None
         while previous != text:
@@ -84,9 +115,19 @@ class LLMService:
             text = re.sub(prefix_pattern, "", text, flags=re.M | re.I)
             text = re.sub(r"^\s*\d+[.、]\s*", "", text, flags=re.M)
             text = re.sub(r"^\s*[-*•]\s*", "", text, flags=re.M)
+            
+            # Remove example-like lines
+            for pattern in example_patterns:
+                text = re.sub(pattern, "", text, flags=re.M | re.I)
+            
             text = text.strip()
 
+        # Remove any remaining colon-prefixed lines
+        text = re.sub(r"^\s*[^：:\n]+[：:]\s*", "", text, flags=re.M)
+        
+        # Remove multiple newlines
         text = re.sub(r"\n{3,}", "\n\n", text)
+        
         return text
 
     def generate_reply(self, user_message: str, context: Optional[Dict[str, Any]] = None) -> str:

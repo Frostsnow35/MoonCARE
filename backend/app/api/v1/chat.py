@@ -181,7 +181,10 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
                 "intent": response.get("intent", "general"),
                 "is_sensitive": is_sensitive,
                 "suggestions": response.get("suggestions", []),
+                "actions": response.get("actions", []),
                 "risk_level": response.get("state", {}).get("risk_level", "low"),
+                "reply_status": response.get("reply_status", "ok"),
+                "elapsed_ms": response.get("elapsed_ms", 0),
                 "assessment_state": assessment_result.assessment_state,
                 "memory_state": memory_state,
             })
@@ -349,6 +352,8 @@ async def send_chat_message(
         "suggestions": response.get("suggestions", []),
         "actions": response.get("actions", []),
         "is_sensitive": is_sensitive,
+        "reply_status": response.get("reply_status", "ok"),
+        "elapsed_ms": response.get("elapsed_ms", 0),
         "assessment_state": assessment_result.assessment_state,
         "memory_state": memory_state,
     }

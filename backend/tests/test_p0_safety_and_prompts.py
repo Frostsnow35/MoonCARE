@@ -222,6 +222,76 @@ class P0SafetyAndPromptTests(unittest.TestCase):
         self.assertIn("我昨天说过睡不好", service.router.last_state["recent_context"])
         self.assertIn("共情", service.router.last_state["mode_guidance"])
 
+    def test_agent_service_timeout_returns_fallback_quickly(self):
+        from app.services.agent_service import AgentService
+
+        import asyncio
+        import time
+
+        class PassivePerception:
+            def analyze(self, message: str, cycle_phase=None, sensor_data=None):
+                return {"risk_level": "low", "cycle_phase": cycle_phase or "经前期"}
+
+        class SlowRouter:
+            def route(self, message: str, state: dict, agent_mode: str = "auto"):
+                time.sleep(0.2)
+                return "late model reply", "support"
+
+        service = AgentService()
+        service.perception = PassivePerception()
+        service.router = SlowRouter()
+        service.reply_timeout_seconds = 0.01
+
+        result = asyncio.run(
+            service.get_response(
+                user_id=1,
+                session_id="timeout-test",
+                user_message="我有点难过",
+                context={},
+                agent_mode="support",
+            )
+        )
+
+        self.assertLess(result["elapsed_ms"], 150)
+        self.assertEqual(result["intent"], "timeout_fallback")
+        self.assertEqual(result["reply_status"], "timeout_fallback")
+        self.assertIn("先", result["message"])
+        self.assertGreaterEqual(result["elapsed_ms"], 0)
+
+    def test_agent_service_crisis_timeout_uses_safe_fallback(self):
+        from app.services.agent_service import AgentService
+
+        import asyncio
+        import time
+
+        class CrisisPerception:
+            def analyze(self, message: str, cycle_phase=None, sensor_data=None):
+                return {"risk_level": "crisis", "cycle_phase": "未知"}
+
+        class SlowRouter:
+            def route(self, message: str, state: dict, agent_mode: str = "auto"):
+                time.sleep(0.2)
+                return "late model reply", "intervention"
+
+        service = AgentService()
+        service.perception = CrisisPerception()
+        service.router = SlowRouter()
+        service.reply_timeout_seconds = 0.01
+
+        result = asyncio.run(
+            service.get_response(
+                user_id=1,
+                session_id="crisis-timeout",
+                user_message="我想自残",
+                context={},
+                agent_mode="auto",
+            )
+        )
+
+        self.assertEqual(result["intent"], "timeout_fallback")
+        self.assertEqual(result["reply_status"], "timeout_fallback")
+        self.assertIn("可信任的人", result["message"])
+
     def test_interview_copy_uses_subtle_state_assessment_language(self):
         from app.agents.interview_agent import InterviewAgent
 

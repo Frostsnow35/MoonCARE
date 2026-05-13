@@ -1,6 +1,8 @@
 """
 Agent服务 - 委托给新的 Agent 系统
 """
+import asyncio
+import time
 import traceback
 from typing import Any, Dict, List, Optional
 from app.config import settings
@@ -23,6 +25,7 @@ class AgentService:
 
     def __init__(self):
         self.context_window = settings.CONTEXT_WINDOW_SIZE  # 10轮对话
+        self.reply_timeout_seconds = settings.CHAT_AGENT_REPLY_TIMEOUT_SECONDS
         self.router = None  # Lazy init
         self.perception = None  # Lazy init
 
@@ -160,6 +163,35 @@ class AgentService:
         )
         return state
 
+    async def _route_with_deadline(
+        self,
+        router: Any,
+        user_message: str,
+        state: Dict[str, Any],
+        agent_mode: str,
+    ) -> tuple[str, str]:
+        """Run blocking Router/LLM work off the event loop with a chat deadline."""
+        return await asyncio.wait_for(
+            asyncio.to_thread(
+                router.route,
+                user_message,
+                state,
+                agent_mode=agent_mode,
+            ),
+            timeout=max(float(self.reply_timeout_seconds), 0.01),
+        )
+
+    def _timeout_fallback(self, user_message: str, state: Dict[str, Any]) -> str:
+        """Return a bounded fallback when the selected model misses the chat deadline."""
+        risk_level = (state or {}).get("risk_level", "low")
+        if risk_level in {"high", "crisis"} or contains_crisis_signal(user_message):
+            return SAFE_INTERVENTION_FALLBACK
+
+        return (
+            "这次模型响应有点慢，我先接住你。你刚说的感受值得被认真听见，"
+            "可以先把最难受的那一点留在这里；如果愿意，也可以点重试让我继续回应。"
+        )
+
     async def get_response(
         self,
         user_id: int,
@@ -172,6 +204,8 @@ class AgentService:
         获取AI响应
         使用新的 Agent 路由系统
         """
+        started_at = time.perf_counter()
+        reply_status = "ok"
         try:
             cycle_phase = context.get("cycle_phase")
             sensor_data = context.get("sensor_data", {})
@@ -184,13 +218,23 @@ class AgentService:
                 sensor_data=sensor_data
             )
             state = self._attach_conversation_context(state, context, agent_mode)
+            state["message"] = user_message
 
             # 2. Router 路由到对应 Agent
             router = self._get_router()
-            reply, agent_name = router.route(user_message, state, agent_mode=agent_mode)
+            try:
+                reply, agent_name = await self._route_with_deadline(
+                    router=router,
+                    user_message=user_message,
+                    state=state,
+                    agent_mode=agent_mode,
+                )
+            except asyncio.TimeoutError:
+                reply = self._timeout_fallback(user_message, state)
+                agent_name = "timeout_fallback"
+                reply_status = "timeout_fallback"
 
             # 3. 生成功能建议
-            state["message"] = user_message
             actions = self._generate_action_suggestions(state)
 
         except Exception as e:
@@ -205,8 +249,11 @@ class AgentService:
                 reply = "我现在有点状况，可能需要稍后再试~"
                 agent_name = "error"
                 state = {"risk_level": "low", "cycle_phase": "未知", "message": user_message}
+            reply_status = "error_fallback"
             
             actions = self._generate_action_suggestions(state)
+
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
 
         return {
             "message": reply,
@@ -215,6 +262,8 @@ class AgentService:
             "suggestions": [],
             "actions": actions,
             "state": state,
+            "reply_status": reply_status,
+            "elapsed_ms": elapsed_ms,
             "memory_state": state.get("memory_state", {"has_memory": False, "count": 0, "updated": False, "categories": []}),
         }
 

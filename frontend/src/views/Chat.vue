@@ -189,7 +189,7 @@ import { useChatStore } from '../stores/chat'
 import BottomNav from '../components/BottomNav.vue'
 
 const chatStore = useChatStore()
-const CHAT_REPLY_TIMEOUT_MS = 40000
+const CHAT_REPLY_TIMEOUT_MS = 22000
 
 const messagesContainer = ref(null)
 const inputEl = ref(null)
@@ -280,12 +280,16 @@ async function sendMessage(messageOverride = '') {
     if (Object.prototype.hasOwnProperty.call(result, 'memory_state')) {
       chatStore.setMemoryState(result.memory_state)
     }
+    if (result.reply_status === 'timeout_fallback') {
+      chatStore.lastError = 'GLM-5.1 这次响应偏慢，我先给了你一个承接回复；你可以点重试继续等完整回答。'
+      lastRetryMessage.value = text
+    }
     chatStore.addAssistantMessage(result.reply, result.suggestions || [], result.actions || [])
   } catch (error) {
     console.error('Failed to send message:', error)
     lastRetryMessage.value = text
     chatStore.lastError = error.message === 'CHAT_REPLY_TIMEOUT'
-      ? '这次回复等得有点久，我先停止等待了。你可以重试，或者换成“陪伴”模式继续聊。'
+      ? '这次回复超过 22 秒，我先停止等待了。你可以重试，或者换成“陪伴”模式继续聊。'
       : '刚才连接不太稳定，我没有发出回复。你可以重试一次。'
   } finally {
     localTyping.value = false

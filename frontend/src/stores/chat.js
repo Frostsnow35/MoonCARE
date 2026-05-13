@@ -158,7 +158,10 @@ export const useChatStore = defineStore('chat', () => {
         if (Object.prototype.hasOwnProperty.call(data, 'memory_state')) {
           setMemoryState(data.memory_state)
         }
-        addAssistantMessage(data.message, data.suggestions)
+        if (data.reply_status === 'timeout_fallback') {
+          lastError.value = 'GLM-5.1 这次响应偏慢，我先给了你一个承接回复；你可以重试继续等完整回答。'
+        }
+        addAssistantMessage(data.message, data.suggestions, data.actions || [])
       } else if (data.type === 'error') {
         console.error('WebSocket error:', data.message)
         isAwaitingReply.value = false

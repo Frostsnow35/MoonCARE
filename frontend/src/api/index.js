@@ -4,7 +4,7 @@ const api_base_url = import.meta.env.VITE_API_BASE_URL || 'https://mooncare.onre
 
 const api = axios.create({
   baseURL: api_base_url,
-  timeout: 60000,  // 60 seconds for LLM API calls
+  timeout: 25000,
   headers: {
     'Content-Type': 'application/json'
   }
