@@ -60,8 +60,11 @@ class Settings(BaseSettings):
     ZAI_MODEL_NAME: str = "glm-5.1"
 
     # Chat latency controls. Keep the model and prompts unchanged, but bound user wait time.
-    LLM_REQUEST_TIMEOUT_SECONDS: float = 18.0
-    CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 18.0
+    LLM_REQUEST_TIMEOUT_SECONDS: float = 45.0
+    LLM_CONNECT_TIMEOUT_SECONDS: float = 10.0
+    LLM_WRITE_TIMEOUT_SECONDS: float = 20.0
+    LLM_POOL_TIMEOUT_SECONDS: float = 10.0
+    CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 45.0
     LLM_MAX_RETRIES: int = 0
 
     SQLITE_JOURNAL_MODE: str = "TRUNCATE"
@@ -75,6 +78,48 @@ class Settings(BaseSettings):
 
     NLP_CONFIDENCE_THRESHOLD: float = 0.6
     CONTEXT_WINDOW_SIZE: int = 10
+
+    # Redis configuration for semantic caching
+    REDIS_URL: str = "redis://localhost:6379"
+    REDIS_MAX_CONNECTIONS: int = 100
+    REDIS_CONNECTION_TIMEOUT: float = 0.3
+    REDIS_SOCKET_TIMEOUT: float = 0.5
+
+    # Semantic cache configuration
+    SEMANTIC_CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_TTL_HOURS: int = 24
+    SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.85
+    SEMANTIC_CACHE_MAX_RESULTS: int = 3
+
+    # Awareness Local product memory. This is intended for local development
+    # and demos; production needs a separate multi-user isolation review.
+    AWARENESS_MEMORY_ENABLED: bool = True
+    AWARENESS_BASE_URL: str = "http://localhost:37800"
+    AWARENESS_MCP_PATH: str = "/mcp"
+    AWARENESS_TIMEOUT_SECONDS: float = 3.0
+    AWARENESS_RECALL_LIMIT: int = 5
+    AWARENESS_SOURCE: str = "mooncare-backend"
+
+    # HTTP/2 and connection pooling configuration
+    HTTP2_ENABLED: bool = True
+    KEEP_ALIVE_ENABLED: bool = True
+    KEEP_ALIVE_TIMEOUT_SECONDS: int = 60
+    MAX_CONCURRENT_CONNECTIONS: int = 1000
+    CONNECTION_POOL_SIZE: int = 100
+
+    # Compression configuration
+    ENABLE_GZIP_COMPRESSION: bool = True
+    ENABLE_BROTLI_COMPRESSION: bool = False
+
+    # Streaming configuration
+    STREAMING_ENABLED: bool = True
+    STREAMING_CHUNK_SIZE: int = 1024
+    FIRST_TOKEN_TIMEOUT_SECONDS: float = 20.0
+
+    # Conversation compaction configuration
+    MAX_PROMPT_TOKENS: int = 4096
+    SYSTEM_PROMPT_TOKENS: int = 1024
+    MAX_RESPONSE_TOKENS: int = 512
 
     class Config:
         env_file = ".env"

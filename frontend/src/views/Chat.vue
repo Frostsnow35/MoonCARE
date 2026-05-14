@@ -19,13 +19,53 @@
               <p v-if="memoryStatusText" class="text-[11px] text-pink-500 truncate">{{ memoryStatusText }}</p>
             </div>
           </div>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-pink-50 transition-colors"
+              @click="showMoreMenu = !showMoreMenu"
+              title="更多选项"
+            >
+              <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div
+          v-if="showMoreMenu"
+          class="mt-2 py-2 bg-white rounded-2xl shadow-lg border border-gray-100 animate-fadeIn"
+        >
+          <button
+            type="button"
+            class="w-full flex items-center gap-3 px-4 py-3 hover:bg-pink-50 transition-colors text-left"
+            @click="startNewSession"
+          >
+            <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            <span class="text-sm text-gray-700">新建会话</span>
+          </button>
+          <button
+            type="button"
+            class="w-full flex items-center gap-3 px-4 py-3 hover:bg-pink-50 transition-colors text-left"
+            @click="openSessionList"
+          >
+            <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span class="text-sm text-gray-700">历史会话</span>
+          </button>
           <button
             v-if="messages.length > 0"
             type="button"
-            class="min-h-10 px-3 text-xs text-gray-500 rounded-lg active:bg-gray-100"
+            class="w-full flex items-center gap-3 px-4 py-3 hover:bg-pink-50 transition-colors text-left"
             @click="clearChat"
           >
-            清空
+            <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            <span class="text-sm text-gray-700">清空当前会话</span>
           </button>
         </div>
       </header>
@@ -178,6 +218,68 @@
       </section>
     </div>
 
+    <div v-if="showSessionList" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30" @click.self="showSessionList = false">
+      <div class="bg-white rounded-2xl w-full max-w-sm mx-4 max-h-[70vh] flex flex-col">
+        <div class="flex items-center justify-between p-4 border-b border-gray-100">
+          <h3 class="text-base font-bold text-gray-800">历史会话</h3>
+          <button type="button" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100" @click="showSessionList = false">
+            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-2">
+          <button
+            type="button"
+            class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-pink-50 transition-colors text-left"
+            @click="startNewSession"
+          >
+            <div class="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-gray-800">新建会话</p>
+              <p class="text-xs text-gray-400">开始一段新的对话</p>
+            </div>
+          </button>
+          <div v-if="sessionListLoading" class="flex items-center justify-center py-8">
+            <div class="flex gap-1">
+              <span class="w-2 h-2 rounded-full bg-pink-400 animate-bounce" style="animation-delay: 0ms"></span>
+              <span class="w-2 h-2 rounded-full bg-pink-400 animate-bounce" style="animation-delay: 140ms"></span>
+              <span class="w-2 h-2 rounded-full bg-pink-400 animate-bounce" style="animation-delay: 280ms"></span>
+            </div>
+          </div>
+          <div v-else-if="sessionList.length === 0" class="text-center py-8 text-sm text-gray-400">
+            暂无历史会话
+          </div>
+          <button
+            v-for="session in sessionList"
+            v-else
+            :key="session.session_id"
+            type="button"
+            class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-pink-50 transition-colors text-left"
+            :class="session.session_id === chatStore.sessionId ? 'bg-pink-50' : ''"
+            @click="loadSession(session.session_id)"
+          >
+            <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-sm font-medium text-gray-800 truncate">{{ formatRelativeTime(session.last_message_at) }}</p>
+                <span v-if="session.session_id === chatStore.sessionId" class="text-xs text-pink-500 shrink-0">当前</span>
+              </div>
+              <p class="text-xs text-gray-400 truncate">{{ session.message_count ? `${session.message_count}条消息` : '暂无消息' }}</p>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <BottomNav />
   </div>
 </template>
@@ -186,17 +288,24 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { chatAPI, interviewAPI } from '../api'
 import { useChatStore } from '../stores/chat'
+import { useAuthStore } from '../stores/auth'
 import BottomNav from '../components/BottomNav.vue'
 
 const chatStore = useChatStore()
-const CHAT_REPLY_TIMEOUT_MS = 22000
+const authStore = useAuthStore()
+const CHAT_REPLY_TIMEOUT_MS = 50000
+const STREAM_FIRST_CHUNK_TIMEOUT_MS = 25000
+const STREAM_OVERALL_TIMEOUT_MS = 90000
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
 
 const messagesContainer = ref(null)
 const inputEl = ref(null)
 const inputMessage = ref('')
 const localTyping = ref(false)
 const showModeMenu = ref(false)
+const showMoreMenu = ref(false)
 const lastRetryMessage = ref('')
+const streamingMessageId = ref(null)
 
 const messages = computed(() => chatStore.messages)
 const isTyping = computed(() => chatStore.isAwaitingReply || localTyping.value)
@@ -220,6 +329,68 @@ function formatTime(timestamp) {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+function formatRelativeTime(timestamp) {
+  if (!timestamp) return ''
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diffMs = now - date
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return '刚刚'
+  if (diffMins < 60) return `${diffMins}分钟前`
+  if (diffHours < 24) return `${diffHours}小时前`
+  if (diffDays < 7) return `${diffDays}天前`
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
+
+const showSessionList = ref(false)
+const sessionList = ref([])
+const sessionListLoading = ref(false)
+
+async function loadSessionList() {
+  sessionListLoading.value = true
+  try {
+    const result = await chatAPI.getSessions(1)
+    sessionList.value = Array.isArray(result) ? result : (result.sessions || [])
+  } catch (error) {
+    console.error('Failed to load session list:', error)
+    sessionList.value = []
+  } finally {
+    sessionListLoading.value = false
+  }
+}
+
+async function loadSession(sessionId) {
+  try {
+    const result = await chatAPI.getHistory(sessionId)
+    const turns = result.turns || []
+    if (turns.length > 0) {
+      chatStore.clearSession()
+      chatStore.sessionId = sessionId
+      chatStore.hasBootstrapped = true
+      for (const msg of turns) {
+        if (msg.role === 'user') {
+          chatStore.addMessage(msg.content, 'user')
+        } else if (msg.role === 'assistant') {
+          chatStore.addAssistantMessage(msg.content, msg.suggestions || [], msg.actions || [])
+        }
+      }
+    }
+    showSessionList.value = false
+  } catch (error) {
+    console.error('Failed to load session:', error)
+  }
+}
+
+function startNewSession() {
+  chatStore.clearSession()
+  chatStore.hasBootstrapped = false
+  chatStore.bootstrapConversation()
+  showSessionList.value = false
 }
 
 function selectMode(mode) {
@@ -263,37 +434,151 @@ async function sendMessage(messageOverride = '') {
     chatStore.addMessage(text, 'user')
 
     chatStore.isAwaitingReply = true
-    const result = await withTimeout(
-      chatAPI.sendMessage(
-        text,
-        1,
-        chatStore.sessionId,
-        null,
-        chatStore.agentMode
-      ),
-      CHAT_REPLY_TIMEOUT_MS
-    )
-    chatStore.sessionId = result.session_id
-    if (Object.prototype.hasOwnProperty.call(result, 'assessment_state')) {
-      chatStore.setAssessmentState(result.assessment_state)
-    }
-    if (Object.prototype.hasOwnProperty.call(result, 'memory_state')) {
-      chatStore.setMemoryState(result.memory_state)
-    }
-    if (result.reply_status === 'timeout_fallback') {
-      chatStore.lastError = 'GLM-5.1 这次响应偏慢，我先给了你一个承接回复；你可以点重试继续等完整回答。'
-      lastRetryMessage.value = text
-    }
-    chatStore.addAssistantMessage(result.reply, result.suggestions || [], result.actions || [])
+    await sendStreamingMessage(text)
+    
   } catch (error) {
     console.error('Failed to send message:', error)
     lastRetryMessage.value = text
     chatStore.lastError = error.message === 'CHAT_REPLY_TIMEOUT'
-      ? '这次回复超过 22 秒，我先停止等待了。你可以重试，或者换成“陪伴”模式继续聊。'
-      : '刚才连接不太稳定，我没有发出回复。你可以重试一次。'
+      ? '刚才没有顺利接上。你可以直接继续说一句，我会接着听。'
+      : '刚才连接不太稳定，我没有发出回复。你可以直接继续说，我会接着听。'
   } finally {
     localTyping.value = false
     chatStore.isAwaitingReply = false
+  }
+}
+
+async function sendStreamingMessage(text) {
+  const controller = new AbortController()
+  let firstChunkReceived = false
+  const firstChunkTimer = window.setTimeout(() => {
+    if (!firstChunkReceived) controller.abort()
+  }, STREAM_FIRST_CHUNK_TIMEOUT_MS)
+  const overallTimer = window.setTimeout(() => controller.abort(), STREAM_OVERALL_TIMEOUT_MS)
+
+  try {
+    const headers = {
+      'Accept': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    
+    // 添加 Authorization header
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    const response = await fetch(`${apiBaseUrl}/chat/stream`, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: new URLSearchParams({
+        message: text,
+        user_id: authStore.user?.id || 1,
+        session_id: chatStore.sessionId || '',
+        agent_mode: chatStore.agentMode,
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    if (!response.body) {
+      throw new Error('STREAM_BODY_UNAVAILABLE')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    let fullResponse = ''
+    let messageId = null
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!firstChunkReceived) {
+        firstChunkReceived = true
+        window.clearTimeout(firstChunkTimer)
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      
+      while (buffer.includes('\n\n')) {
+        const index = buffer.indexOf('\n\n')
+        const chunkStr = buffer.substring(0, index)
+        buffer = buffer.substring(index + 2)
+
+        if (chunkStr.startsWith('data: ')) {
+          const dataStr = chunkStr.substring(5)
+          try {
+            const chunk = JSON.parse(dataStr)
+            
+            if (chunk.type === 'start') {
+              chatStore.sessionId = chunk.session_id
+            } else if (chunk.type === 'token') {
+              fullResponse += chunk.token
+              chatStore.lastError = ''
+              
+              if (!messageId) {
+                messageId = chatStore.addAssistantMessage(chunk.token, [], [])
+              } else {
+                chatStore.updateMessage(messageId, fullResponse)
+              }
+            } else if (chunk.type === 'end') {
+              chatStore.sessionId = chunk.session_id
+              
+              if (chunk.full_response && messageId) {
+                chatStore.updateMessage(messageId, chunk.full_response)
+              } else if (chunk.full_response && !messageId) {
+                messageId = chatStore.addAssistantMessage(chunk.full_response, [], [])
+              }
+              
+              if (messageId && chunk.actions && chunk.actions.length > 0) {
+                chatStore.updateMessageActions(messageId, chunk.actions)
+              }
+              
+              if (chunk.memory_state) {
+                chatStore.setMemoryState(chunk.memory_state)
+              }
+            }
+          } catch (e) {
+            console.error('Failed to parse SSE data:', e)
+          }
+        }
+      }
+    }
+
+  } catch (error) {
+    console.error('Streaming error:', error)
+    
+    try {
+      const result = await withTimeout(
+        chatAPI.sendMessage(
+          text,
+          authStore.user?.id || 1,
+          chatStore.sessionId,
+          null,
+          chatStore.agentMode
+        ),
+        CHAT_REPLY_TIMEOUT_MS
+      )
+      
+      chatStore.sessionId = result.session_id
+      if (Object.prototype.hasOwnProperty.call(result, 'memory_state')) {
+        chatStore.setMemoryState(result.memory_state)
+      }
+      if (result.reply_status === 'timeout_fallback') {
+        lastRetryMessage.value = text
+      }
+      chatStore.addAssistantMessage(result.reply, result.suggestions || [], result.actions || [])
+    } catch (fallbackError) {
+      console.error('Fallback error:', fallbackError)
+      chatStore.addAssistantMessage('我在。刚才没有顺利接上完整回复，但你可以直接继续说，我会接着听。', [], [])
+    }
+  } finally {
+    window.clearTimeout(firstChunkTimer)
+    window.clearTimeout(overallTimer)
   }
 }
 
@@ -336,6 +621,11 @@ function dismissError() {
   chatStore.lastError = ''
 }
 
+function openSessionList() {
+  showMoreMenu.value = false
+  showSessionList.value = true
+}
+
 function retryLastMessage() {
   const retryText = lastRetryMessage.value
   if (!retryText) return
@@ -376,6 +666,12 @@ onMounted(async () => {
     return
   }
 
+  if (chatStore.hasRestoredSession) {
+    await nextTick()
+    scrollToBottom()
+    return
+  }
+
   chatStore.bootstrapConversation()
 
   try {
@@ -384,6 +680,12 @@ onMounted(async () => {
     }
   } catch (error) {
     console.log('Session will be created on first message')
+  }
+})
+
+watch(showSessionList, (newVal) => {
+  if (newVal) {
+    loadSessionList()
   }
 })
 

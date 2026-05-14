@@ -17,6 +17,7 @@ class BiometricData(Base):
     hrv = Column(Float, nullable=True)  # hardware bpm -> stored as hrv
     skin_temperature = Column(Float, nullable=True)  # Celsius
     motion = Column(String(20), nullable=True)  # LOW, MEDIUM, HIGH
+    cerebral_blood_flow = Column(Float, nullable=True)  # mL/100g/min, 脑血流量
 
     # Encrypted raw data (if needed)
     raw_data = Column(JSON, nullable=True)

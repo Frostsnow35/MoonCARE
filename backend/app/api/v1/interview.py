@@ -8,6 +8,7 @@ from app.services.psst_scoring_service import PSSTScoringService
 from app.services.report_service import ReportService
 from app.agents.interview_agent import InterviewAgent
 from app.agents.intervention_agent import InterventionAgent
+from app.api.v1.deps import get_current_user_id
 
 router = APIRouter(prefix="/interview", tags=["经前状态了解"])
 
@@ -41,7 +42,7 @@ interview_sessions = {}
 
 
 @router.post("/start", response_model=InterviewStartResponse)
-async def start_interview(user_id: int = 1):
+async def start_interview(user_id: int = Depends(get_current_user_id)):
     """开始经前状态了解对话"""
     interview_agent = InterviewAgent()
     reply = interview_agent.start()
@@ -61,7 +62,7 @@ async def start_interview(user_id: int = 1):
 @router.post("/turn", response_model=InterviewTurnResponse)
 async def interview_turn(
     request: InterviewTurnRequest,
-    user_id: int = 1,
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """继续经前状态了解对话"""
@@ -124,7 +125,7 @@ async def interview_turn(
 @router.post("/knowledge")
 async def ask_knowledge(
     question: str,
-    user_id: int = 1
+    user_id: int = Depends(get_current_user_id)
 ):
     """直接查询经期/PMS相关知识库"""
     from app.agents.knowledge_agent import KnowledgeAgent

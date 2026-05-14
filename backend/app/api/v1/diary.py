@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
+from datetime import datetime, date, time
 import json
 
 from app.database import get_db
 from app.models.mood import MoodDiary
 from app.schemas.diary import MoodDiaryCreate, MoodDiaryUpdate, MoodDiaryResponse, MoodDiaryListResponse
 from app.services.nlp_service import NLPService
+from app.api.v1.deps import get_current_user_id
 
 router = APIRouter(prefix="/diary", tags=["情绪日记"])
 
@@ -14,6 +16,7 @@ router = APIRouter(prefix="/diary", tags=["情绪日记"])
 @router.post("", response_model=MoodDiaryResponse)
 async def create_mood_diary(
     diary: MoodDiaryCreate,
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -37,7 +40,7 @@ async def create_mood_diary(
             diary.keywords = nlp_result["keywords"]
 
     mood_diary = MoodDiary(
-        user_id=1,  # TODO: from auth
+        user_id=user_id,
         date=diary.date,
         input_type=diary.input_type,
         original_text=diary.original_text,
@@ -65,7 +68,7 @@ async def create_mood_diary(
 
 @router.get("", response_model=MoodDiaryListResponse)
 async def get_mood_diaries(
-    user_id: int = 1,  # TODO: from auth
+    user_id: int = Depends(get_current_user_id),
     limit: int = 30,
     offset: int = 0,
     db: Session = Depends(get_db)
@@ -86,6 +89,42 @@ async def get_mood_diaries(
             diary.keywords = json.loads(diary.keywords)
 
     return MoodDiaryListResponse(diaries=diaries, total=total)
+
+
+@router.get("/today")
+async def get_today_diary(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    获取当日日记，用于聊天Agent个性化问候
+    """
+    today_start = datetime.combine(date.today(), time.min)
+    today_end = datetime.combine(date.today(), time.max)
+    diary = db.query(MoodDiary).filter(
+        MoodDiary.user_id == user_id,
+        MoodDiary.date >= today_start,
+        MoodDiary.date <= today_end
+    ).first()
+
+    if not diary:
+        return {
+            "has_diary": False,
+            "content": None,
+            "emotion_tags": [],
+            "created_at": None
+        }
+
+    emotion_tags = []
+    if diary.emotion_tags:
+        emotion_tags = json.loads(diary.emotion_tags)
+
+    return {
+        "has_diary": True,
+        "content": diary.original_text or diary.processed_text,
+        "emotion_tags": emotion_tags,
+        "created_at": diary.created_at.isoformat() if diary.created_at else None
+    }
 
 
 @router.get("/{diary_id}", response_model=MoodDiaryResponse)

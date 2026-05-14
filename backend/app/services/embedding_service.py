@@ -22,7 +22,7 @@ class EmbeddingService:
         if self._model is None and not self._model_loading_failed:
             try:
                 # Only try once, no retries
-                self._model = SentenceTransformer("all-MiniLM-L6-v2", timeout=5)
+                self._model = SentenceTransformer("all-MiniLM-L6-v2")
             except Exception as e:
                 print(f"[EmbeddingService] 模型加载失败: {e}")
                 self._model_loading_failed = True

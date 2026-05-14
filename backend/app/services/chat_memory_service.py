@@ -401,3 +401,43 @@ class ChatMemoryService:
         if len(normalized) <= limit:
             return normalized
         return f"{normalized[: limit - 1]}…"
+
+    EMOTION_DICT = {
+        "积极": ["开心", "高兴", "快乐", "愉快", "幸福", "喜悦", "兴奋", "满足", "舒服", "轻松"],
+        "焦虑": ["烦躁", "焦虑", "不安", "紧张", "担心", "害怕", "恐慌", "压力", "忐忑"],
+        "难过": ["难过", "伤心", "失落", "沮丧", "绝望", "痛苦", "哭泣", "沮丧", "郁闷"],
+        "疲惫": ["累", "疲惫", "困", "无力", "疲倦", "困倦", "疲劳", "没劲"],
+        "中性": ["平静", "正常", "一般", "还好", "还行"]
+    }
+
+    def extract_emotion_keywords(self, text: str) -> List[str]:
+        """从文本中提取情绪关键词"""
+        if not text:
+            return []
+
+        found_emotions = []
+        text_lower = text.lower()
+
+        for emotion_type, keywords in self.EMOTION_DICT.items():
+            for keyword in keywords:
+                if keyword in text:
+                    found_emotions.append(emotion_type)
+                    break
+
+        return found_emotions
+
+    def get_dominant_emotion(self, text: str) -> str:
+        """获取文本中的主导情绪"""
+        if not text:
+            return "中性"
+
+        found_emotions = self.extract_emotion_keywords(text)
+
+        if not found_emotions:
+            return "中性"
+
+        emotion_counts = {}
+        for emotion in found_emotions:
+            emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+
+        return max(emotion_counts, key=emotion_counts.get)

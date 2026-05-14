@@ -1,15 +1,22 @@
+import asyncio
+import logging
 import os
 import re
-from typing import Optional, Dict, Any, List
+import time
+from typing import Optional, Dict, Any, List, AsyncGenerator, Iterator
+
+import httpx
+
 from app.config import settings
 from app.utils.prompt_loader import render_prompt
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI, AsyncOpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
     OpenAI = None
+    AsyncOpenAI = None
 
 
 _NVIDIA_MODEL_ALIASES = {
@@ -17,6 +24,8 @@ _NVIDIA_MODEL_ALIASES = {
     "glm5.1": "z-ai/glm-5.1",
     "z-ai/glm5.1": "z-ai/glm-5.1",
 }
+
+logger = logging.getLogger(__name__)
 
 
 class LLMService:
@@ -26,6 +35,7 @@ class LLMService:
         
         # Get LLM provider from environment or config
         llm_provider = os.getenv("LLM_PROVIDER", settings.LLM_PROVIDER).lower().strip()
+        self.provider = llm_provider
         
         if llm_provider == "vllm":
             api_key = os.getenv("VLLM_API_KEY", settings.VLLM_API_KEY)
@@ -90,12 +100,69 @@ class LLMService:
                 "nvidia, openai, vllm, accelerated, zai"
             )
 
+        self.http2_enabled = self._should_enable_http2(llm_provider)
+        self.http_client = self._build_http_client(async_mode=False)
+        self.async_http_client = self._build_http_client(async_mode=True)
+
         self.client = OpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
             max_retries=settings.LLM_MAX_RETRIES,
+            http_client=self.http_client,
         )
+        
+        if AsyncOpenAI:
+            self.async_client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=settings.LLM_REQUEST_TIMEOUT_SECONDS,
+                max_retries=settings.LLM_MAX_RETRIES,
+                http_client=self.async_http_client,
+            )
+        else:
+            self.async_client = None
+
+    def _should_enable_http2(self, llm_provider: str) -> bool:
+        """Return whether HTTP/2 should be used for the selected provider."""
+        if not bool(settings.HTTP2_ENABLED):
+            return False
+        # NVIDIA Integrate currently answers basic HTTPS and streaming requests, but the
+        # OpenAI SDK over HTTP/2 can fail the streaming connection on this endpoint.
+        # Keep pooled keep-alive clients, but use HTTP/1.1 for this provider.
+        return llm_provider != "nvidia"
+
+    def _build_http_client(self, async_mode: bool) -> httpx.Client | httpx.AsyncClient:
+        """Create a reusable HTTPX client for OpenAI-compatible model gateways."""
+        max_connections = max(int(settings.MAX_CONCURRENT_CONNECTIONS), 1)
+        max_keepalive = max(int(settings.CONNECTION_POOL_SIZE), 0) if settings.KEEP_ALIVE_ENABLED else 0
+        timeout = httpx.Timeout(
+            timeout=float(settings.LLM_REQUEST_TIMEOUT_SECONDS),
+            connect=float(settings.LLM_CONNECT_TIMEOUT_SECONDS),
+            write=float(settings.LLM_WRITE_TIMEOUT_SECONDS),
+            pool=float(settings.LLM_POOL_TIMEOUT_SECONDS),
+        )
+        limits = httpx.Limits(
+            max_connections=max_connections,
+            max_keepalive_connections=min(max_keepalive, max_connections),
+            keepalive_expiry=float(settings.KEEP_ALIVE_TIMEOUT_SECONDS) if settings.KEEP_ALIVE_ENABLED else 0.0,
+        )
+        client_class = httpx.AsyncClient if async_mode else httpx.Client
+        return client_class(
+            http2=bool(self.http2_enabled),
+            timeout=timeout,
+            limits=limits,
+        )
+
+    async def aclose(self) -> None:
+        """Close pooled async HTTP resources during explicit service shutdown."""
+        if getattr(self, "async_http_client", None):
+            await self.async_http_client.aclose()
+
+    def close(self) -> None:
+        """Close pooled sync HTTP resources during explicit service shutdown."""
+        if getattr(self, "http_client", None):
+            self.http_client.close()
 
     def _normalize_openai_compatible_base_url(self, base_url: Optional[str]) -> Optional[str]:
         if not base_url:
@@ -132,7 +199,7 @@ class LLMService:
         text = re.sub(r"</?think>", "", text, flags=re.I)
         text = re.sub(r"\b_chatting_\b", "", text, flags=re.I)
 
-      # Remove all role prefixes and format markers
+        # Remove all role prefixes and format markers
         prefix_pattern = (
             r"^\s*(?:"
             r"assistant|Assistant|AI|MoonCARE|"
@@ -169,6 +236,9 @@ class LLMService:
         
         # Remove multiple newlines
         text = re.sub(r"\n{3,}", "\n\n", text)
+        
+        # 清理多余的空格
+        text = re.sub(r'\s+', ' ', text).strip()
         
         return text
 
@@ -207,6 +277,161 @@ class LLMService:
             return "我在这里。你可以说一点，再跟我说现在最难忍受的那一部分。"
 
         return text
+
+    def streaming_generate_reply(
+        self, 
+        user_message: str, 
+        context: Optional[Dict[str, Any]] = None
+    ) -> Iterator[Dict[str, Any]]:
+        """Stream reply tokens with first-token latency tracking."""
+        context = context or {}
+        first_token_received = False
+        start_time = time.perf_counter()
+        first_token_latency_ms = 0
+
+        if context.get("raw_system_prompt"):
+            system_prompt = context["raw_system_prompt"]
+        else:
+            cycle_phase = context.get("cycle_phase", "未知")
+            risk_level = context.get("risk_level", "low")
+
+            system_prompt = render_prompt(
+                "default_chat_prompt.txt",
+                cycle_phase=cycle_phase,
+                risk_level=risk_level,
+                memory_context=context.get("memory_context", "暂无可用长期记忆。"),
+                recent_context=context.get("recent_context", "暂无最近对话。"),
+                retrieved_context=context.get("retrieved_context", "暂无检索片段。"),
+                mode_guidance=context.get("mode_guidance", ""),
+            )
+
+        messages = self._build_messages(system_prompt, user_message, context)
+
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.85,
+                max_tokens=320,
+                stream=True,
+            )
+
+            for chunk in stream:
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                content = getattr(delta, "content", None) or ""
+                
+                if content:
+                    is_first = not first_token_received
+                    if is_first:
+                        first_token_received = True
+                        first_token_latency_ms = int((time.perf_counter() - start_time) * 1000)
+                    
+                    yield {
+                        "token": content,
+                        "is_first": is_first,
+                        "first_token_latency_ms": first_token_latency_ms,
+                    }
+
+        except Exception as e:
+            yield {
+                "token": "",
+                "is_first": False,
+                "first_token_latency_ms": 0,
+                "error": str(e),
+            }
+
+    async def async_streaming_generate_reply(
+        self, 
+        user_message: str, 
+        context: Optional[Dict[str, Any]] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Async stream reply tokens with first-token latency tracking."""
+        context = context or {}
+        first_token_received = False
+        start_time = time.perf_counter()
+        first_token_latency_ms = 0
+
+        if not self.async_client:
+            raise RuntimeError("AsyncOpenAI client not available")
+
+        if context.get("raw_system_prompt"):
+            system_prompt = context["raw_system_prompt"]
+        else:
+            cycle_phase = context.get("cycle_phase", "未知")
+            risk_level = context.get("risk_level", "low")
+
+            system_prompt = render_prompt(
+                "default_chat_prompt.txt",
+                cycle_phase=cycle_phase,
+                risk_level=risk_level,
+                memory_context=context.get("memory_context", "暂无可用长期记忆。"),
+                recent_context=context.get("recent_context", "暂无最近对话。"),
+                retrieved_context=context.get("retrieved_context", "暂无检索片段。"),
+                mode_guidance=context.get("mode_guidance", ""),
+            )
+
+        messages = self._build_messages(system_prompt, user_message, context)
+
+        try:
+            stream = await self.async_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.85,
+                max_tokens=320,
+                stream=True,
+            )
+
+            iterator = stream.__aiter__()
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(
+                        iterator.__anext__(),
+                        timeout=(
+                            float(settings.FIRST_TOKEN_TIMEOUT_SECONDS)
+                            if not first_token_received
+                            else float(settings.LLM_REQUEST_TIMEOUT_SECONDS)
+                        ),
+                    )
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    yield {
+                        "token": "",
+                        "is_first": False,
+                        "first_token_latency_ms": int((time.perf_counter() - start_time) * 1000),
+                        "error": "first_token_timeout" if not first_token_received else "stream_timeout",
+                    }
+                    return
+
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                content = getattr(delta, "content", None) or ""
+                
+                if content:
+                    is_first = not first_token_received
+                    if is_first:
+                        first_token_received = True
+                        first_token_latency_ms = int((time.perf_counter() - start_time) * 1000)
+                    
+                    yield {
+                        "token": content,
+                        "is_first": is_first,
+                        "first_token_latency_ms": first_token_latency_ms,
+                    }
+
+        except Exception as e:
+            logger.warning("Async streaming LLM request failed: %s", e)
+            yield {
+                "token": "",
+                "is_first": False,
+                "first_token_latency_ms": 0,
+                "error": str(e),
+            }
 
     def _build_messages(
         self,

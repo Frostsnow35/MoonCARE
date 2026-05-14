@@ -14,3 +14,18 @@ python-dotenv>=1.0.0
 
 sentence-transformers>=2.2.0
 openai>=1.0.0
+
+# Redis Stack for semantic caching
+redis>=5.0.0
+
+# High-performance inference engines (optional)
+vllm>=0.6.0
+
+# HTTP/2 support
+h2>=4.1.0
+
+# Prometheus metrics
+prometheus-client>=0.20.0
+
+# Token counting
+tiktoken>=0.5.2

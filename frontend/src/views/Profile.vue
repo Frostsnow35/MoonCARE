@@ -10,12 +10,14 @@
       <div class="px-4 -mt-2">
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
           <div class="flex items-center gap-3">
-            <div class="w-12 h-12 rounded-full bg-pink-100 flex items-center justify-center">
-              <span class="text-2xl">👤</span>
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-pink-100 to-pink-200 flex items-center justify-center">
+              <svg class="w-6 h-6 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
             </div>
             <div class="flex-1">
-              <div class="font-medium text-gray-800">用户 {{ userId }}</div>
-              <div class="text-xs text-gray-500">智能情绪管理</div>
+              <div class="font-medium text-gray-800">{{ authStore.user?.nickname || '用户' }}</div>
+              <div class="text-xs text-gray-500">{{ authStore.user?.email || '' }}</div>
             </div>
           </div>
         </div>
@@ -85,7 +87,10 @@
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="flex items-center justify-between p-4 active:bg-gray-50 cursor-pointer">
             <div class="flex items-center gap-3">
-              <span class="text-xl">⚙️</span>
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
               <div>
                 <div class="font-medium text-gray-800 text-sm">设置</div>
                 <div class="text-xs text-gray-500">通知、隐私等</div>
@@ -96,16 +101,19 @@
 
           <div class="border-t border-gray-100"></div>
 
-          <div class="flex items-center justify-between p-4 active:bg-gray-50 cursor-pointer">
-            <div class="flex items-center gap-3">
-              <span class="text-xl">📖</span>
-              <div>
-                <div class="font-medium text-gray-800 text-sm">使用指南</div>
-                <div class="text-xs text-gray-500">了解如何使用</div>
-              </div>
+          <button
+            type="button"
+            class="w-full flex items-center gap-3 p-4 active:bg-gray-50 text-left"
+            @click="handleLogout"
+          >
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <div>
+              <div class="font-medium text-red-500 text-sm">退出登录</div>
+              <div class="text-xs text-gray-400">切换账户或退出当前账户</div>
             </div>
-            <span class="text-gray-400 text-sm">→</span>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -124,9 +132,13 @@
 <script setup>
 import BottomNav from '../components/BottomNav.vue'
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useHealthStore } from '../stores/health'
+import { useAuthStore } from '../stores/auth'
 
+const router = useRouter()
 const healthStore = useHealthStore()
+const authStore = useAuthStore()
 const userId = ref(1)
 
 const cyclePrediction = computed(() => healthStore.cyclePrediction)
@@ -145,6 +157,11 @@ function formatDate(dateStr) {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
+}
+
+function handleLogout() {
+  authStore.logout()
+  router.push('/login')
 }
 
 onMounted(async () => {

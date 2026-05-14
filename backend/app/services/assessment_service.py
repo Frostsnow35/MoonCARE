@@ -122,19 +122,53 @@ class AssessmentOrchestrator:
     def extract_signals(self, text: str) -> Dict[str, Any]:
         """Extract structured PMS-related signals without making a diagnosis."""
         normalized = text or ""
+        work_interest = self._score(normalized, ["不想工作", "不想学习", "提不起劲", "不想上班", "不想学", "很难开始"])
+        home_interest = self._score(normalized, ["不想做家务", "不想收拾", "不想动", "家里的事不想管"])
+        social_interest = self._score(normalized, ["不想社交", "不想回消息", "不想见人", "想一个人待着", "不想出门"])
+        concentration = self._score(normalized, ["难集中", "注意力", "专注不了", "脑子乱", "看不进去"])
+        insomnia = self._score(normalized, ["睡不好", "失眠", "睡不着", "入睡困难", "老醒"])
+        hypersomnia = self._score(normalized, ["嗜睡", "睡不醒", "一直想睡", "困得不行"])
+        overwhelmed = self._score(normalized, ["失控", "撑不住", "扛不住", "控制不了", "管不住", "事情太多"])
+        physical_symptoms = self._score(
+            normalized,
+            ["乳房胀痛", "乳房痛", "头痛", "腹痛", "腰酸", "水肿", "胀痛", "肚子胀"],
+        )
+        work_impairment = self._score(normalized, ["效率下降", "工作受影响", "学习受影响", "做不动", "节奏被打乱"])
+        coworker_impairment = self._score(normalized, ["同事冲突", "老师冲突", "工作关系受影响"])
+        family_impairment = self._score(normalized, ["家人吵", "父母吵", "对象吵", "伴侣吵", "家庭关系受影响"])
+        social_impairment = self._score(normalized, ["社交受影响", "取消约", "不想和朋友见面"])
+        home_impairment = self._score(normalized, ["家务顾不上", "家里的事顾不上", "责任扛不动"])
         signals: Dict[str, Any] = {
             "irritability": self._score(normalized, ["烦躁", "易怒", "脾气", "一点就炸", "火大"]),
             "anxiety": self._score(normalized, ["焦虑", "紧张", "慌", "担心", "不安"]),
             "tearful": self._score(normalized, ["想哭", "委屈", "敏感", "容易哭"]),
             "depressed": self._score(normalized, ["低落", "没意思", "无力", "开心不起来", "难过"]),
+            "work_interest": work_interest,
+            "home_interest": home_interest,
+            "social_interest": social_interest,
+            "concentration": concentration,
             "fatigue": self._score(normalized, ["累", "疲惫", "乏力", "没精神"]),
-            "sleep_change": self._score(normalized, ["睡不好", "失眠", "睡不着", "嗜睡", "睡不醒"]),
             "craving": self._score(normalized, ["想吃", "甜", "暴食", "食欲"]),
-            "pain_or_bloating": self._score(normalized, ["胀", "痛", "腹痛", "头痛", "腰酸"]),
-            "study_work": self._score(normalized, ["学习", "工作", "效率", "上班", "做事"]),
-            "social": self._score(normalized, ["社交", "朋友", "回消息", "见人"]),
-            "family": self._score(normalized, ["家人", "父母", "对象", "伴侣", "吵"]),
-            "self_care": self._score(normalized, ["不想动", "洗澡", "吃饭", "照顾自己"]),
+            "insomnia": insomnia,
+            "hypersomnia": hypersomnia,
+            "overwhelmed": overwhelmed,
+            "physical_symptoms": physical_symptoms,
+            "sleep_change": max(insomnia, hypersomnia),
+            "pain_or_bloating": max(physical_symptoms, self._score(normalized, ["胀", "痛", "腹痛", "头痛", "腰酸"])),
+            "work_impairment": work_impairment,
+            "coworker_impairment": coworker_impairment,
+            "family_impairment": family_impairment,
+            "social_impairment": social_impairment,
+            "home_impairment": home_impairment,
+            "study_work": max(
+                work_interest,
+                work_impairment,
+                concentration,
+                self._score(normalized, ["学习", "工作", "效率", "上班", "做事"]),
+            ),
+            "social": max(social_interest, social_impairment, self._score(normalized, ["社交", "朋友", "回消息", "见人"])),
+            "family": max(family_impairment, self._score(normalized, ["家人", "父母", "对象", "伴侣", "吵"])),
+            "self_care": max(home_interest, home_impairment, self._score(normalized, ["不想动", "洗澡", "吃饭", "照顾自己"])),
             "self_harm": any(term in normalized.lower() for term in ["自残", "伤害自己", "self harm"]),
             "suicidal_ideation": contains_crisis_signal(normalized),
         }

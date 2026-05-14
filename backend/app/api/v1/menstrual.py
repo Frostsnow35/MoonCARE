@@ -8,6 +8,7 @@ from app.models.menstrual import MenstrualRecord
 from app.models.mood import MoodDiary
 from app.schemas.menstrual import MenstrualRecordCreate, MenstrualRecordResponse, CyclePredictResponse
 from app.services.cycle_predictor import CyclePredictor
+from app.api.v1.deps import get_current_user_id
 
 router = APIRouter(prefix="/menstrual", tags=["月经周期"])
 
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/menstrual", tags=["月经周期"])
 @router.post("/record", response_model=MenstrualRecordResponse)
 async def create_menstrual_record(
     record: MenstrualRecordCreate,
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -24,7 +26,7 @@ async def create_menstrual_record(
     """
     # Check for duplicate start date
     existing = db.query(MenstrualRecord).filter(
-        MenstrualRecord.user_id == 1,  # TODO: from auth
+        MenstrualRecord.user_id == user_id,
         MenstrualRecord.start_date == record.start_date
     ).first()
 
@@ -41,7 +43,7 @@ async def create_menstrual_record(
 
     # Get cycle number
     last_record = db.query(MenstrualRecord).filter(
-        MenstrualRecord.user_id == 1  # TODO: from auth
+        MenstrualRecord.user_id == user_id
     ).order_by(MenstrualRecord.start_date.desc()).first()
 
     cycle_number = 1
@@ -50,7 +52,7 @@ async def create_menstrual_record(
 
     # Create record
     menstrual_record = MenstrualRecord(
-        user_id=1,  # TODO: from auth
+        user_id=user_id,
         cycle_number=cycle_number,
         start_date=record.start_date,
         end_date=record.end_date,
@@ -66,14 +68,14 @@ async def create_menstrual_record(
 
     # Update prediction
     predictor = CyclePredictor(db)
-    predictor.update_prediction(1)  # TODO: from auth
+    predictor.update_prediction(user_id)
 
     return menstrual_record
 
 
 @router.get("/records", response_model=List[MenstrualRecordResponse])
 async def get_menstrual_records(
-    user_id: int = 1,  # TODO: from auth
+    user_id: int = Depends(get_current_user_id),
     limit: int = 12,
     db: Session = Depends(get_db)
 ):
@@ -90,9 +92,9 @@ async def get_menstrual_records(
     return records
 
 
-@router.get("/predict", response_model=CyclePredictResponse)
+@router.get("/predict")
 async def predict_next_period(
-    user_id: int = 1,  # TODO: from auth
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -104,16 +106,26 @@ async def predict_next_period(
     try:
         result = predictor.predict(user_id)
 
-        return CyclePredictResponse(
-            predicted_start=result["predicted_start"],
-            confidence=result["confidence"],
-            error_range=result["error_range"],
-            next_period_date=result["predicted_start"],
-            current_phase=result["current_phase"],
-            phase_days_remaining=result["phase_days_remaining"]
-        )
+        return {
+            "predicted_start": result["predicted_start"],
+            "confidence": result["confidence"],
+            "error_range": result["error_range"],
+            "next_period_date": result["predicted_start"],
+            "current_phase": result["current_phase"],
+            "phase_days_remaining": result["phase_days_remaining"],
+            "status": "success"
+        }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return {
+            "predicted_start": None,
+            "confidence": 0,
+            "error_range": 0,
+            "next_period_date": None,
+            "current_phase": "unknown",
+            "phase_days_remaining": None,
+            "status": "no_data",
+            "message": str(e)
+        }
 
 
 @router.put("/record/{record_id}", response_model=MenstrualRecordResponse)

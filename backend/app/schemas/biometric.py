@@ -11,6 +11,7 @@ class BiometricUpload(BaseModel):
     motion: Optional[str] = None  # motion level: LOW, MEDIUM, HIGH
     confidence: Optional[str] = "HIGH"  # confidence level: LOW, HIGH
     wearing: Optional[bool] = None  # 是否佩戴
+    cerebral_blood_flow: Optional[float] = None  # mL/100g/min, 脑血流量
 
 
 class BiometricResponse(BaseModel):
@@ -32,6 +33,7 @@ class BiometricDataPoint(BaseModel):
     hrv: Optional[float] = None  # hardware bpm
     skin_temperature: Optional[float] = None
     motion: Optional[str] = None
+    cerebral_blood_flow: Optional[float] = None  # mL/100g/min, 脑血流量
 
     class Config:
         from_attributes = True

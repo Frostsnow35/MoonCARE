@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import Dict, List
+from typing import Dict, List, AsyncGenerator, Optional
 import json
 import logging
 import uuid
@@ -12,8 +13,9 @@ from app.models.conversation import Conversation
 from app.schemas.chat import ChatMessage, ChatResponse, ChatHistoryResponse
 from app.services.agent_service import get_agent_service
 from app.services.assessment_service import AssessmentOrchestrator
-from app.services.chat_memory_service import ChatMemoryService
+from app.services.product_memory_service import ProductMemoryService
 from app.services.nlp_service import NLPService
+from app.api.v1.deps import get_current_user_id
 
 router = APIRouter(prefix="/chat", tags=["AI对话"])
 logger = logging.getLogger(__name__)
@@ -53,7 +55,7 @@ def _safe_capture_memory(
 ) -> Dict:
     """Persist safe chat memories without blocking the main assistant reply."""
     try:
-        return ChatMemoryService(db).capture_user_message(
+        return ProductMemoryService(db).capture_user_message(
             user_id=user_id,
             conversation_id=conversation_id,
             message=message,
@@ -100,7 +102,7 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
             intent = nlp_service.get_intent(user_message)
             is_sensitive = nlp_service.check_sensitive(user_message)
             nlp_result["intent"] = intent
-            memory_service = ChatMemoryService(db)
+            memory_service = ProductMemoryService(db)
             nlp_result["conversation_memory"] = memory_service.build_prompt_context(
                 user_id=user_id,
                 session_id=session_id,
@@ -208,7 +210,7 @@ async def websocket_chat(websocket: WebSocket, user_id: int):
 @router.get("/history/{session_id}", response_model=ChatHistoryResponse)
 async def get_chat_history(
     session_id: str,
-    user_id: int = 1,  # TODO: from auth
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """获取对话历史"""
@@ -236,7 +238,7 @@ async def get_chat_history(
 
 
 @router.post("/session", response_model=dict)
-async def create_chat_session(user_id: int = 1):
+async def create_chat_session(user_id: int = Depends(get_current_user_id)):
     """创建新的对话会话"""
     session_id = str(uuid.uuid4())
     return {
@@ -247,11 +249,11 @@ async def create_chat_session(user_id: int = 1):
 
 @router.post("/message")
 async def send_chat_message(
-    message: str,
-    user_id: int = 1,
-    session_id: str = None,
-    cycle_phase: str = None,
-    agent_mode: str = "auto",
+    message: str = Form(...),
+    user_id: int = Depends(get_current_user_id),
+    session_id: Optional[str] = Form(None),
+    cycle_phase: Optional[str] = Form(None),
+    agent_mode: str = Form("auto"),
     db: Session = Depends(get_db)
 ):
     """直接发送消息获取AI回复（REST API，非WebSocket）"""
@@ -273,7 +275,7 @@ async def send_chat_message(
         "cycle_phase": cycle_phase,
         "sensor_data": {}
     }
-    memory_service = ChatMemoryService(db)
+    memory_service = ProductMemoryService(db)
     context["conversation_memory"] = memory_service.build_prompt_context(
         user_id=user_id,
         session_id=session_id,
@@ -361,7 +363,7 @@ async def send_chat_message(
 
 @router.get("/sessions")
 async def get_chat_sessions(
-    user_id: int = 1,  # TODO: from auth
+    user_id: int = Depends(get_current_user_id),
     limit: int = 10,
     db: Session = Depends(get_db)
 ):
@@ -389,3 +391,130 @@ async def get_chat_sessions(
         }
         for s in sessions
     ]
+
+
+@router.post("/stream")
+async def stream_chat_message(
+    message: str = Form(...),
+    user_id: int = Depends(get_current_user_id),
+    session_id: Optional[str] = Form(None),
+    cycle_phase: Optional[str] = Form(None),
+    agent_mode: str = Form("auto"),
+    db: Session = Depends(get_db)
+):
+    """SSE 流式聊天接口 - 支持实时打字效果"""
+    if not message:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    agent_service = get_agent_service()
+    nlp_service = NLPService()
+
+    nlp_result = await nlp_service.analyze_text(message)
+    intent = nlp_service.get_intent(message)
+    is_sensitive = nlp_service.check_sensitive(message)
+
+    context = {
+        **nlp_result,
+        "intent": intent,
+        "cycle_phase": cycle_phase,
+        "sensor_data": {}
+    }
+    memory_service = ProductMemoryService(db)
+    context["conversation_memory"] = memory_service.build_prompt_context(
+        user_id=user_id,
+        session_id=session_id,
+        query_message=message,
+    )
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        full_response = ""
+        
+        async for chunk in agent_service.get_streaming_response(
+            user_id=user_id,
+            session_id=session_id,
+            user_message=message,
+            context=context,
+            agent_mode=agent_mode,
+        ):
+            chunk_type = chunk.get("type")
+            
+            if chunk_type == "start":
+                yield f"data: {json.dumps({
+                    'type': 'start',
+                    'session_id': session_id,
+                    'risk_level': chunk.get('risk_level', 'low'),
+                    'agent_name': chunk.get('agent_name', 'support'),
+                })}\n\n"
+            
+            elif chunk_type == "token":
+                token = chunk.get("token", "")
+                full_response += token
+                yield f"data: {json.dumps({
+                    'type': 'token',
+                    'token': token,
+                    'is_final': chunk.get('is_final', False),
+                    'first_token_latency_ms': chunk.get('first_token_latency_ms', 0),
+                })}\n\n"
+            
+            elif chunk_type == "end":
+                final_response = chunk.get("full_response") or full_response
+                full_response = final_response
+
+                # 保存对话记录
+                last_turn = db.query(func.max(Conversation.turn_number)).filter(
+                    Conversation.user_id == user_id,
+                    Conversation.session_id == session_id,
+                ).scalar() or 0
+                
+                user_conv = Conversation(
+                    user_id=user_id,
+                    session_id=session_id,
+                    turn_number=last_turn + 1,
+                    role="user",
+                    content=message,
+                    intent=intent,
+                    sentiment_score=nlp_result.get("sentiment_score"),
+                    is_sensitive=1 if is_sensitive else 0,
+                )
+                assistant_conv = Conversation(
+                    user_id=user_id,
+                    session_id=session_id,
+                    turn_number=last_turn + 2,
+                    role="assistant",
+                    content=final_response,
+                )
+                db.add(user_conv)
+                db.add(assistant_conv)
+                db.commit()
+                
+                memory_state = _safe_capture_memory(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=user_conv.id,
+                    message=message,
+                    context=context,
+                    is_sensitive=is_sensitive,
+                )
+                
+                yield f"data: {json.dumps({
+                    'type': 'end',
+                    'session_id': session_id,
+                    'full_response': final_response,
+                    'actions': chunk.get('actions', []),
+                    'elapsed_ms': chunk.get('elapsed_ms', 0),
+                    'memory_state': memory_state,
+                })}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "Transfer-Encoding": "chunked",
+            "X-Accel-Buffering": "no",
+        }
+    )
