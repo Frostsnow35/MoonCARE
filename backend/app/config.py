@@ -91,9 +91,9 @@ class Settings(BaseSettings):
     SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.85
     SEMANTIC_CACHE_MAX_RESULTS: int = 3
 
-    # Awareness Local product memory. This is intended for local development
-    # and demos; production needs a separate multi-user isolation review.
-    AWARENESS_MEMORY_ENABLED: bool = True
+    # Awareness Local product memory (OPTIONAL - requires separate Awareness daemon)
+    # Set to false if Awareness service is not available; system will use local DB only
+    AWARENESS_MEMORY_ENABLED: bool = False
     AWARENESS_BASE_URL: str = "http://localhost:37800"
     AWARENESS_MCP_PATH: str = "/mcp"
     AWARENESS_TIMEOUT_SECONDS: float = 3.0
