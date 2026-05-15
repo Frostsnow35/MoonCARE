@@ -440,24 +440,26 @@ async def stream_chat_message(
             agent_mode=agent_mode,
         ):
             chunk_type = chunk.get("type")
-            
+
             if chunk_type == "start":
-                yield f"data: {json.dumps({
+                data = {
                     'type': 'start',
                     'session_id': session_id,
                     'risk_level': chunk.get('risk_level', 'low'),
                     'agent_name': chunk.get('agent_name', 'support'),
-                })}\n\n"
-            
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+
             elif chunk_type == "token":
                 token = chunk.get("token", "")
                 full_response += token
-                yield f"data: {json.dumps({
+                data = {
                     'type': 'token',
                     'token': token,
                     'is_final': chunk.get('is_final', False),
                     'first_token_latency_ms': chunk.get('first_token_latency_ms', 0),
-                })}\n\n"
+                }
+                yield f"data: {json.dumps(data)}\n\n"
             
             elif chunk_type == "end":
                 final_response = chunk.get("full_response") or full_response
@@ -498,15 +500,17 @@ async def stream_chat_message(
                     context=context,
                     is_sensitive=is_sensitive,
                 )
-                
-                yield f"data: {json.dumps({
+
+                data = {
                     'type': 'end',
                     'session_id': session_id,
                     'full_response': final_response,
                     'actions': chunk.get('actions', []),
                     'elapsed_ms': chunk.get('elapsed_ms', 0),
                     'memory_state': memory_state,
-                })}\n\n"
+                }
+                # 再生成 SSE 格式的数据
+                yield f"data: {json.dumps(data)}\n\n"
 
     return StreamingResponse(
         event_stream(),

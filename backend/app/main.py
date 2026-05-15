@@ -41,7 +41,10 @@ async def lifespan(app: FastAPI):
     if settings.SEMANTIC_CACHE_ENABLED:
         try:
             semantic_cache = get_semantic_cache()
-            stats = semantic_cache.get_cache_stats()
+            if semantic_cache and hasattr(semantic_cache, 'get_cache_stats'):
+                stats = semantic_cache.get_cache_stats()
+            else:
+                stats = {"error": "cache unavailable"}
             if stats.get("available"):
                 print(f"[Startup] Semantic cache initialized: {stats}")
             else:
@@ -85,6 +88,13 @@ app = FastAPI(
 music_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "music")
 os.makedirs(music_dir, exist_ok=True)
 app.mount("/music", StaticFiles(directory=music_dir), name="music")
+
+frontend_dist_path = os.path.join(os.path.dirname(__file__), "../../frontend/dist")
+if os.path.isdir(frontend_dist_path):
+    app.mount("/", StaticFiles(directory=frontend_dist_path, html=True), name="frontend")
+    print(f"Frontend static files mounted from {frontend_dist_path}")
+else:
+    print(f"Frontend dist not found at {frontend_dist_path}, API only mode.")
 
 # GZip compression middleware
 if settings.ENABLE_GZIP_COMPRESSION:

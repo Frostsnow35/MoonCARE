@@ -3,9 +3,11 @@ __pycache__/
 *.py[cod]
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 .env
-venv/
 .venv/
+venv/
 
 # Node
 node_modules/
@@ -19,3 +21,10 @@ dist/
 
 # Logs
 *.log
+
+# Awareness 本地记忆数据
+.awareness/
+
+# 其他
+*.pid
+*.swp
