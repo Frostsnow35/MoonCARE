@@ -3,7 +3,7 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 # 复制前端依赖文件
 COPY frontend/package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci && npm cache clean --force
 # 复制源码并构建
 COPY frontend/ ./
 RUN npm run build
@@ -22,6 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # ========== 阶段3：最终运行镜像 ==========
 FROM python:3.11-slim
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
 # 创建非 root 用户
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --gid 1001 appuser

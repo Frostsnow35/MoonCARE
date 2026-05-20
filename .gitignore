@@ -28,3 +28,5 @@ dist/
 # 其他
 *.pid
 *.swp
+MoonCARE/
+logs/

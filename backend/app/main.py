@@ -5,9 +5,12 @@ FastAPI Application Entry Point
 
 import asyncio
 import os
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
@@ -26,6 +29,25 @@ from app.models.conversation import Conversation
 from app.models.chat_memory import ChatMemory
 from app.models.music import Music
 from app.models.assessment import AssessmentObservation, AssessmentSession
+
+
+FRONTEND_DIST_PATH = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+FRONTEND_INDEX_PATH = FRONTEND_DIST_PATH / "index.html"
+FRONTEND_RESERVED_PATHS = {
+    "api",
+    "docs",
+    "redoc",
+    "openapi.json",
+    "health",
+    "metrics",
+    "music",
+}
+
+
+def _is_reserved_frontend_path(full_path: str) -> bool:
+    """Return True for backend/API paths that must not fall through to Vue."""
+    first_segment = full_path.lstrip("/").split("/", 1)[0]
+    return first_segment in FRONTEND_RESERVED_PATHS
 
 
 @asynccontextmanager
@@ -89,12 +111,10 @@ music_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "music")
 os.makedirs(music_dir, exist_ok=True)
 app.mount("/music", StaticFiles(directory=music_dir), name="music")
 
-frontend_dist_path = os.path.join(os.path.dirname(__file__), "../../frontend/dist")
-if os.path.isdir(frontend_dist_path):
-    app.mount("/", StaticFiles(directory=frontend_dist_path, html=True), name="frontend")
-    print(f"Frontend static files mounted from {frontend_dist_path}")
+if FRONTEND_INDEX_PATH.is_file():
+    print(f"Frontend static files available from {FRONTEND_DIST_PATH}")
 else:
-    print(f"Frontend dist not found at {frontend_dist_path}, API only mode.")
+    print(f"Frontend dist not found at {FRONTEND_DIST_PATH}, API only mode.")
 
 # GZip compression middleware
 if settings.ENABLE_GZIP_COMPRESSION:
@@ -167,6 +187,9 @@ app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 # Root endpoint
 @app.get("/")
 async def root():
+    if FRONTEND_INDEX_PATH.is_file():
+        return FileResponse(FRONTEND_INDEX_PATH)
+
     return {
         "message": "欢迎使用 HealthAI - 智能情绪管理平台",
         "docs": "/docs",
@@ -177,3 +200,17 @@ async def root():
             "rest": "/api/v1/chat/message",
         }
     }
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def frontend_spa_fallback(full_path: str):
+    """Serve Vue history routes in one-image deployments without masking APIs."""
+    if not FRONTEND_INDEX_PATH.is_file() or _is_reserved_frontend_path(full_path):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    frontend_root = FRONTEND_DIST_PATH.resolve()
+    requested_path = (frontend_root / full_path).resolve()
+    if requested_path.is_relative_to(frontend_root) and requested_path.is_file():
+        return FileResponse(requested_path)
+
+    return FileResponse(FRONTEND_INDEX_PATH)
