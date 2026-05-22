@@ -49,10 +49,10 @@ export const useHealthStore = defineStore('health', () => {
   })
 
   // Actions
-  async function fetchEmotionState(userId = 1) {
+  async function fetchEmotionState(days = 7) {
     isLoading.value = true
     try {
-      const result = await emotionAPI.predict(userId)
+      const result = await emotionAPI.predict(days)
       currentPhase.value = result.phase
       pmsRisk.value = result.pms_risk
       moodLevel.value = result.mood_level
@@ -64,9 +64,9 @@ export const useHealthStore = defineStore('health', () => {
     }
   }
 
-  async function fetchPhaseInfo(userId = 1) {
+  async function fetchPhaseInfo() {
     try {
-      const result = await emotionAPI.getPhase(userId)
+      const result = await emotionAPI.getPhase()
       phaseInfo.value = result
       currentPhase.value = result.phase
     } catch (error) {
@@ -74,18 +74,18 @@ export const useHealthStore = defineStore('health', () => {
     }
   }
 
-  async function fetchCyclePrediction(userId = 1) {
+  async function fetchCyclePrediction() {
     try {
-      cyclePrediction.value = await menstrualAPI.predict(userId)
+      cyclePrediction.value = await menstrualAPI.predict()
     } catch (error) {
       console.error('Failed to fetch cycle prediction:', error)
       cyclePrediction.value = null
     }
   }
 
-  async function fetchRecommendations(userId = 1, context = 'mood_low') {
+  async function fetchRecommendations(context = 'mood_low') {
     try {
-      const result = await emotionAPI.recommend(userId, context)
+      const result = await emotionAPI.recommend(context)
       recommendations.value = result.recommendations
     } catch (error) {
       console.error('Failed to fetch recommendations:', error)
@@ -93,9 +93,9 @@ export const useHealthStore = defineStore('health', () => {
     }
   }
 
-  async function fetchLatestBiometric(userId = 1) {
+  async function fetchLatestBiometric() {
     try {
-      latestBiometric.value = await biometricAPI.getLatest(userId)
+      latestBiometric.value = await biometricAPI.getLatest()
     } catch (error) {
       console.error('Failed to fetch latest biometric:', error)
       latestBiometric.value = null

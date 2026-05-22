@@ -11,10 +11,10 @@ function getChatStorageKey() {
 export const useChatStore = defineStore('chat', () => {
   const AGENT_PROFILES = {
     auto: {
-      label: '自动陪伴',
+      label: '情绪宝宝',
       shortLabel: '自动',
       helper: '自动衔接倾听、知识解释和经期照护建议',
-      welcome: '我先在这里陪你。你可以随便说一点今天的感受，也可以问经前情绪、身体变化或今天怎么照顾自己。这里的内容仅供参考，不替代专业诊断。'
+      welcome: '我先在这里陪你呀。你可以随便说一点今天的感受，也可以问身体变化或怎么照顾自己。我们慢慢来，不急着整理清楚。'
     },
     support: {
       label: '情绪宝宝',
@@ -55,16 +55,17 @@ export const useChatStore = defineStore('chat', () => {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`
   }
 
-  function getWebSocketUrl(userId) {
+  function getWebSocketUrl() {
     const explicitBase = import.meta.env.VITE_WS_BASE_URL
     const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://mooncare.onrender.com/api/v1'
+    const token = localStorage.getItem('access_token')
 
     const base = explicitBase
       ? explicitBase
       : apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:').replace(/\/api\/v1\/?$/, '')
 
     const normalizedBase = base.replace(/\/$/, '')
-    return `${normalizedBase}/api/v1/chat/ws/${userId}`
+    return `${normalizedBase}/api/v1/chat/ws?token=${encodeURIComponent(token)}`
   }
 
   function startHeartbeat() {
@@ -82,14 +83,14 @@ export const useChatStore = defineStore('chat', () => {
     heartbeatTimer.value = null
   }
 
-  function scheduleReconnect(userId) {
+  function scheduleReconnect() {
     if (!shouldReconnect.value) return
     reconnectAttempt.value += 1
 
     const delay = Math.min(30000, 500 * (2 ** Math.min(reconnectAttempt.value, 6)))
     window.setTimeout(() => {
       if (!shouldReconnect.value) return
-      connectWebSocket(userId)
+      connectWebSocket()
     }, delay)
   }
 
@@ -195,9 +196,9 @@ export const useChatStore = defineStore('chat', () => {
     agentMode.value = Object.prototype.hasOwnProperty.call(AGENT_PROFILES, mode) ? mode : 'auto'
   }
 
-  async function createSession(userId = 1) {
+  async function createSession() {
     try {
-      const result = await chatAPI.createSession(userId)
+      const result = await chatAPI.createSession()
       sessionId.value = result.session_id
       return result.session_id
     } catch (error) {
@@ -206,12 +207,20 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function connectWebSocket(userId = 1) {
+  function connectWebSocket() {
     if (websocket.value && (websocket.value.readyState === WebSocket.OPEN || websocket.value.readyState === WebSocket.CONNECTING)) {
       return
     }
 
-    const wsUrl = getWebSocketUrl(userId)
+    const token = localStorage.getItem('access_token')
+    if (!token) {
+      shouldReconnect.value = false
+      isConnected.value = false
+      lastError.value = '请先登录后再开始聊天。'
+      return
+    }
+
+    const wsUrl = getWebSocketUrl()
     websocket.value = new WebSocket(wsUrl)
 
     websocket.value.onopen = () => {
@@ -247,7 +256,7 @@ export const useChatStore = defineStore('chat', () => {
       isConnected.value = false
       console.log('WebSocket disconnected')
       stopHeartbeat()
-      scheduleReconnect(userId)
+      scheduleReconnect()
     }
 
     websocket.value.onerror = (error) => {
@@ -262,7 +271,21 @@ export const useChatStore = defineStore('chat', () => {
     if (websocket.value && isConnected.value) {
       isAwaitingReply.value = true
       lastError.value = ''
-      websocket.value.send(JSON.stringify({ message, agent_mode: agentMode.value }))
+      const clientContext = JSON.stringify(
+        messages.value
+          .filter(item => ['user', 'assistant'].includes(item.role) && typeof item.content === 'string' && item.content.trim())
+          .slice(-12)
+          .map(item => ({
+            role: item.role,
+            content: item.content.replace(/\s+/g, ' ').trim().slice(0, 500)
+          }))
+      )
+      websocket.value.send(JSON.stringify({
+        message,
+        agent_mode: agentMode.value,
+        session_id: sessionId.value || '',
+        client_context: clientContext
+      }))
     }
   }
 

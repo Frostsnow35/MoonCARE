@@ -131,7 +131,7 @@
 
 <script setup>
 import BottomNav from '../components/BottomNav.vue'
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHealthStore } from '../stores/health'
 import { useAuthStore } from '../stores/auth'
@@ -139,7 +139,6 @@ import { useAuthStore } from '../stores/auth'
 const router = useRouter()
 const healthStore = useHealthStore()
 const authStore = useAuthStore()
-const userId = ref(1)
 
 const cyclePrediction = computed(() => healthStore.cyclePrediction)
 

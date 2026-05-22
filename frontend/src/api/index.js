@@ -35,7 +35,22 @@ api.interceptors.response.use(
 
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
-  register: (email, password, nickname) => api.post('/auth/register', { email, password, nickname })
+  register: (email, password, nickname, emailCode) => api.post('/auth/register', {
+    email,
+    password,
+    nickname,
+    email_code: emailCode
+  }),
+  requestEmailCode: (email, purpose = 'register') => api.post('/auth/email-code/send', {
+    email,
+    purpose
+  }),
+  forgotPassword: (email) => api.post('/auth/password/forgot', { email }),
+  resetPassword: (email, emailCode, newPassword) => api.post('/auth/password/reset', {
+    email,
+    email_code: emailCode,
+    new_password: newPassword
+  })
 }
 
 export const biometricAPI = {
@@ -75,13 +90,13 @@ export const chatAPI = {
   createSession: () => api.post('/chat/session'),
   getSessions: () => api.get('/chat/sessions'),
   getHistory: (sessionId) => api.get(`/chat/history/${sessionId}`),
-  sendMessage: (message, userId = 1, sessionId = null, cyclePhase = null, agentMode = 'auto') => {
+  sendMessage: (message, sessionId = null, cyclePhase = null, agentMode = 'auto', clientContext = null) => {
     const formData = new URLSearchParams()
     formData.append('message', message)
-    formData.append('user_id', userId)
     if (sessionId) formData.append('session_id', sessionId)
     if (cyclePhase) formData.append('cycle_phase', cyclePhase)
     if (agentMode) formData.append('agent_mode', agentMode)
+    if (clientContext) formData.append('client_context', clientContext)
     return api.post('/chat/message', formData.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })

@@ -31,8 +31,8 @@ export const useAuthStore = defineStore('auth', () => {
     return response
   }
 
-  async function register(email, password, nickname) {
-    const response = await authAPI.register(email, password, nickname)
+  async function register(email, password, nickname, emailCode) {
+    const response = await authAPI.register(email, password, nickname, emailCode)
     token.value = response.access_token
     user.value = {
       id: response.user_id,
@@ -42,6 +42,18 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('access_token', response.access_token)
     localStorage.setItem('user', JSON.stringify(user.value))
     return response
+  }
+
+  async function requestEmailCode(email, purpose = 'register') {
+    return authAPI.requestEmailCode(email, purpose)
+  }
+
+  async function forgotPassword(email) {
+    return authAPI.forgotPassword(email)
+  }
+
+  async function resetPassword(email, emailCode, newPassword) {
+    return authAPI.resetPassword(email, emailCode, newPassword)
   }
 
   function logout() {
@@ -72,6 +84,9 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     login,
     register,
+    requestEmailCode,
+    forgotPassword,
+    resetPassword,
     logout,
     initializeAuth
   }

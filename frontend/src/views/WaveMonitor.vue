@@ -344,10 +344,7 @@ async function fetchData() {
   if (isPaused.value) return
 
   try {
-    const response = await biometricAPI.query({
-      user_id: 1,
-      limit: 1
-    })
+    const response = await biometricAPI.query({ limit: 1 })
 
     if (response && response.length > 0) {
       // Get the latest data point
@@ -430,7 +427,7 @@ async function fetchEmotion() {
   if (isPaused.value) return
 
   try {
-    const response = await emotionAPI.classify(1)
+    const response = await emotionAPI.classify()
     if (response && response.emotion) {
       emotionData.value = response.emotion
     } else {
@@ -491,7 +488,7 @@ onMounted(async () => {
 
   // Seed mock data once on first load if no data exists
   try {
-    const existingData = await biometricAPI.query({ user_id: 1, limit: 1 })
+    const existingData = await biometricAPI.query({ limit: 1 })
     if (!existingData || existingData.length === 0) {
       await biometricAPI.seed(50)
     }

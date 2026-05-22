@@ -346,7 +346,7 @@ docker compose logs -f app
 
 | 检查项 | 验证方式 |
 | --- | --- |
-| 健康接口 | 访问服务器反代后的 `/health` |
+| 健康接口 | 访问服务器反代后的 `/healthz` |
 | API 文档 | 访问 `/docs`，确认生产环境是否允许暴露 |
 | WebSocket | 验证 `/api/v1/chat/ws/{user_id}` 在反向代理后可 upgrade |
 | 前端资源 | 若采用一体化镜像，确认 `frontend/dist` 被正确挂载并支持路由刷新 |
@@ -382,7 +382,7 @@ docker compose logs -f app
 
 | 工作项 | 为什么优先 | 完成标准 |
 | --- | --- | --- |
-| Docker Compose 可启动 | 当前部署方向是 Docker + 服务器，且 compose 已存在但需验证 | `docker compose config/build/up` 可跑；app 健康检查命中真实 `/health` |
+| Docker Compose 可启动 | 当前部署方向是 Docker + 服务器，且 compose 已存在但需验证 | `docker compose config/build/up` 可跑；app 健康检查命中真实 `/healthz` |
 | 生产环境变量整理 | 默认密钥、数据库密码、LLM Key 不能进入生产 | `.env.example` 或部署文档列清必填项和安全默认值 |
 | 反向代理方案确认 | WebSocket、HTTPS、静态资源和 CORS 都依赖它 | 明确 Nginx/Caddy/Traefik 之一，并写出 API/WS 转发规则 |
 | 用户隔离审计 | 部分接口仍接受显式 `user_id` 或按 `record_id` 查记录 | 所有健康/情绪/日记/周期/音乐接口以 JWT 用户为准，并补越权测试 |
@@ -483,7 +483,7 @@ docker compose logs -f app
 | 生产 CORS 需要收敛 | 当前允许 `*`，生产会有安全风险 |
 | `SECRET_KEY` 必须生产替换 | 默认值仅适合本地开发 |
 | SQLite 并发能力有限 | 高并发或多 worker 部署前需评估 PostgreSQL |
-| `docker-compose.yml` healthcheck 需修正 | 当前 compose 检查 `/healthz`，但 FastAPI 已存在的是 `/health` |
+| `docker-compose.yml` healthcheck | 已修正：compose 检查 `/healthz`，FastAPI 也已更新为 `/healthz` |
 | `entrypoint.sh` 依赖 `pg_isready` | 最终镜像是否包含 PostgreSQL client 工具需要验证 |
 | 前端部署路线未定 | 先保留一体化镜像、独立静态容器、独立托管三种方案，不要提前锁死 |
 | 服务器反向代理未定 | 需要确认 Nginx/Caddy/Traefik 或云网关，并同步 WebSocket、HTTPS、CORS 策略 |

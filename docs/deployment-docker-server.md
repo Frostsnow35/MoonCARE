@@ -35,7 +35,7 @@ MoonCARE 当前默认部署方向是 Docker + 服务器。本文只覆盖工程�
 | 服务 | 检查方式 | 说明 |
 | --- | --- | --- |
 | `postgres` | `pg_isready -U mooncare -d mooncare` | 使用 Postgres 镜像内置工具 |
-| `app` | `curl -fsS http://127.0.0.1:8000/health` | 对齐 FastAPI 当前真实健康接口 `/health` |
+| `app` | `curl -fsS http://127.0.0.1:8000/healthz` | 对齐 FastAPI 当前真实健康接口 `/healthz` |
 
 ## 4. 必填环境变量
 
@@ -150,7 +150,7 @@ sudo systemctl reload nginx
 
 | 检查项 | 验证方式 |
 | --- | --- |
-| 健康接口 | IP 阶段使用 `curl http://SERVER_PUBLIC_IP/health`；域名接入后再验证 HTTPS |
+| 健康接口 | IP 阶段使用 `curl http://SERVER_PUBLIC_IP/healthz`；域名接入后再验证 HTTPS |
 | API | 登录、创建聊天 session、发送低风险消息 |
 | WebSocket | 通过反向代理访问 `/api/v1/chat/ws/{user_id}` 并确认 upgrade |
 | SSE | 访问 `/api/v1/chat/stream`，确认流式输出不被代理缓冲 |

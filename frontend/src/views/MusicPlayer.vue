@@ -189,7 +189,7 @@ async function loadMusic() {
 
   try {
     // Get user's current emotion state
-    const emotionResult = await emotionAPI.predict(1)
+    const emotionResult = await emotionAPI.predict()
     moodLevel.value = emotionResult.mood_level || 5.0
 
     // Determine emotion category based on mood level
@@ -202,7 +202,7 @@ async function loadMusic() {
     }
 
     // Get recommended music
-    const result = await musicAPI.recommend(1, currentEmotion.value)
+    const result = await musicAPI.recommend(currentEmotion.value)
     songs.value = result.recommended_songs || []
   } catch (err) {
     console.error('Failed to load music:', err)

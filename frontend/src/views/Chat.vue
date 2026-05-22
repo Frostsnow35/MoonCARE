@@ -288,14 +288,14 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { chatAPI, interviewAPI } from '../api'
 import { useChatStore } from '../stores/chat'
-import { useAuthStore } from '../stores/auth'
 import BottomNav from '../components/BottomNav.vue'
 
 const chatStore = useChatStore()
-const authStore = useAuthStore()
 const CHAT_REPLY_TIMEOUT_MS = 50000
 const STREAM_FIRST_CHUNK_TIMEOUT_MS = 25000
 const STREAM_OVERALL_TIMEOUT_MS = 90000
+const CLIENT_CONTEXT_TURN_LIMIT = 12
+const CLIENT_CONTEXT_TEXT_LIMIT = 500
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
 
 const messagesContainer = ref(null)
@@ -455,6 +455,7 @@ async function sendStreamingMessage(text) {
     if (!firstChunkReceived) controller.abort()
   }, STREAM_FIRST_CHUNK_TIMEOUT_MS)
   const overallTimer = window.setTimeout(() => controller.abort(), STREAM_OVERALL_TIMEOUT_MS)
+  const clientContext = buildClientContext(text)
 
   try {
     const headers = {
@@ -475,9 +476,9 @@ async function sendStreamingMessage(text) {
       signal: controller.signal,
       body: new URLSearchParams({
         message: text,
-        user_id: authStore.user?.id || 1,
         session_id: chatStore.sessionId || '',
         agent_mode: chatStore.agentMode,
+        client_context: clientContext,
       })
     })
 
@@ -556,10 +557,10 @@ async function sendStreamingMessage(text) {
       const result = await withTimeout(
         chatAPI.sendMessage(
           text,
-          authStore.user?.id || 1,
           chatStore.sessionId,
           null,
-          chatStore.agentMode
+          chatStore.agentMode,
+          clientContext
         ),
         CHAT_REPLY_TIMEOUT_MS
       )
@@ -580,6 +581,23 @@ async function sendStreamingMessage(text) {
     window.clearTimeout(firstChunkTimer)
     window.clearTimeout(overallTimer)
   }
+}
+
+function buildClientContext(currentText = '') {
+  const current = String(currentText || '').trim()
+  const turns = chatStore.messages
+    .filter(msg => ['user', 'assistant'].includes(msg.role) && typeof msg.content === 'string' && msg.content.trim())
+    .slice(-CLIENT_CONTEXT_TURN_LIMIT)
+    .map(msg => ({
+      role: msg.role,
+      content: msg.content.replace(/\s+/g, ' ').trim().slice(0, CLIENT_CONTEXT_TEXT_LIMIT)
+    }))
+
+  while (turns.length > 0 && turns[turns.length - 1].role === 'user' && turns[turns.length - 1].content === current) {
+    turns.pop()
+  }
+
+  return JSON.stringify(turns)
 }
 
 function handleSuggestion(suggestion) {

@@ -152,6 +152,30 @@ class VLLMIntegrationTests(unittest.TestCase):
         self.assertEqual(kwargs["api_key"], "test-zai-key")
         self.assertEqual(kwargs["base_url"], "https://api.z.ai/api/paas/v4")
 
+    def test_09_nvidia_http_client_ignores_env_proxy_by_default(self):
+        """Broken local proxy environment variables must not hijack NVIDIA calls."""
+        from app.agents.llm_service import LLMService
+
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "nvidia",
+            "NVIDIA_API_KEY": "nvapi-test",
+            "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
+            "NVIDIA_MODEL_NAME": "glm-5.1",
+            "HTTP_PROXY": "http://127.0.0.1:9",
+            "HTTPS_PROXY": "http://127.0.0.1:9",
+            "ALL_PROXY": "http://127.0.0.1:9",
+        }, clear=False):
+            with patch("app.agents.llm_service.OpenAI") as mock_openai:
+                service = LLMService()
+
+        try:
+            http_client = mock_openai.call_args.kwargs["http_client"]
+            self.assertFalse(getattr(http_client, "_trust_env", True))
+        finally:
+            service.close()
+            if service.async_client:
+                asyncio.run(service.aclose())
+
 
 class VLLMQuickStartGuide(unittest.TestCase):
     """vLLM 快速启动指南"""

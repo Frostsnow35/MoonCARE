@@ -15,28 +15,33 @@
             </svg>
           </div>
           <h1 class="text-xl font-bold text-gray-800">欢迎回来</h1>
-          <p class="text-sm text-gray-500 mt-1">登录到 MoonCARE</p>
+          <p class="text-sm text-gray-500 mt-1">登录 MoonCARE，继续你的周期陪伴记录</p>
         </div>
 
         <form @submit.prevent="handleLogin" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
             <input
-              v-model="email"
+              v-model.trim="email"
               type="email"
               required
+              autocomplete="email"
               placeholder="your@email.com"
               class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-100 outline-none transition-all text-sm"
             />
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-gray-700">密码</label>
+              <router-link to="/forgot-password" class="text-xs text-pink-500 font-medium hover:underline">忘记密码</router-link>
+            </div>
             <input
               v-model="password"
               type="password"
               required
-              placeholder="输入密码"
+              autocomplete="current-password"
+              placeholder="请输入密码"
               class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-100 outline-none transition-all text-sm"
             />
           </div>
@@ -56,7 +61,7 @@
 
         <div class="mt-6 text-center">
           <p class="text-sm text-gray-500">
-            还没有账户？
+            还没有账号？
             <router-link to="/register" class="text-pink-500 font-medium hover:underline">立即注册</router-link>
           </p>
         </div>
@@ -67,9 +72,10 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -77,6 +83,10 @@ const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
+
+function getErrorMessage(error, fallback) {
+  return error.response?.data?.detail || error.response?.data?.message || fallback
+}
 
 async function handleLogin() {
   if (loading.value) return
@@ -86,9 +96,9 @@ async function handleLogin() {
 
   try {
     await authStore.login(email.value, password.value)
-    router.push('/')
+    router.push(route.query.redirect || '/')
   } catch (error) {
-    errorMessage.value = error.response?.data?.detail || '登录失败，请检查邮箱和密码'
+    errorMessage.value = getErrorMessage(error, '登录失败，请检查邮箱和密码')
   } finally {
     loading.value = false
   }
@@ -98,6 +108,6 @@ async function handleLogin() {
 <style scoped>
 .login-page {
   min-height: 100vh;
-  background: linear-gradient(180deg, #FFF5F7 0%, #FFFFFF 100%);
+  background: linear-gradient(180deg, #fff5f7 0%, #ffffff 100%);
 }
 </style>
