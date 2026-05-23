@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+import re
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -176,6 +177,36 @@ class AuthFlowTests(unittest.TestCase):
             self.assertEqual(db.query(EmailVerificationCode).count(), 0)
         finally:
             db.close()
+
+    def test_debug_empty_login_creates_local_test_user(self):
+        response = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": "", "password": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["access_token"])
+        self.assertEqual(body["email"], "test@mooncare.local")
+        self.assertEqual(body["nickname"], "测试用户")
+
+
+class LoginPageTests(unittest.TestCase):
+    def test_login_form_does_not_require_credentials_for_dev_empty_login(self):
+        login_view = (
+            Path(__file__).resolve().parents[2]
+            / "frontend"
+            / "src"
+            / "views"
+            / "Login.vue"
+        ).read_text(encoding="utf-8")
+        email_input = re.search(r"<input\s+[^>]*v-model\.trim=\"email\"[^>]*>", login_view, re.S)
+        password_input = re.search(r"<input\s+[^>]*v-model=\"password\"[^>]*>", login_view, re.S)
+
+        self.assertIsNotNone(email_input)
+        self.assertIsNotNone(password_input)
+        self.assertNotIn("required", email_input.group(0))
+        self.assertNotIn("required", password_input.group(0))
 
 
 if __name__ == "__main__":

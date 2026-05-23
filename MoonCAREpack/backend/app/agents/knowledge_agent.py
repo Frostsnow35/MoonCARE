@@ -94,6 +94,10 @@ class KnowledgeAgent:
             if question and question in message_lower:
                 score += 2.0
 
+            for marker in ("为什么", "原因", "怎么回事"):
+                if marker in message and marker in item.get("question", ""):
+                    score += 0.8
+
             scored.append((score, item))
 
         scored.sort(key=lambda result: result[0], reverse=True)
@@ -117,6 +121,7 @@ class KnowledgeAgent:
 
     def _retrieve_top_k(self, message: str, k: int = 3) -> list[tuple[float, dict[str, Any]]]:
         """Retrieve the most relevant cards with vector search or keyword fallback."""
+        keyword_scored = self._keyword_match(message, k)
         if self._embedding_available and self.embedder is not None:
             try:
                 query_vector = self.embedder.embed(message)
@@ -131,17 +136,28 @@ class KnowledgeAgent:
 
                 if scored:
                     scored.sort(key=lambda result: result[0], reverse=True)
+                    seen_ids = {item.get("id") for _, item in scored}
+                    for keyword_score, item in keyword_scored:
+                        if keyword_score <= 0:
+                            continue
+                        if item.get("id") not in seen_ids:
+                            scored.append((keyword_score, item))
+                            seen_ids.add(item.get("id"))
+                    scored.sort(key=lambda result: result[0], reverse=True)
                     return scored[:k]
             except Exception as exc:
                 logger.info("[KnowledgeAgent] Embedding retrieval failed, using keyword match: %s", exc)
 
-        return self._keyword_match(message, k)
+        return keyword_scored
 
     def _prompt_context(self, state: dict[str, Any] | None = None) -> dict[str, Any]:
         """Build common prompt fields for knowledge responses."""
         state = state or {}
         return {
+            "cycle_phase": state.get("cycle_phase", "未知"),
+            "risk_level": state.get("risk_level", "low"),
             "memory_context": state.get("memory_context", "暂无可用长期记忆。"),
+            "health_context": state.get("health_context", "暂无可用的周期/日记上下文。"),
             "recent_context": state.get("recent_context", "暂无最近对话。"),
             "retrieved_context": state.get("retrieved_context", "暂无检索片段。"),
             "conversation_messages": state.get("conversation_messages", []),
@@ -249,6 +265,18 @@ class KnowledgeAgent:
 
     def _cautious_fallback_answer(self, message: str, state: dict[str, Any] | None = None) -> str:
         """Return a non-diagnostic PMS knowledge answer when generation fails."""
+        compact = "".join((message or "").split())
+        if "头晕" in compact:
+            return (
+                "经期头晕可能和疼痛、睡眠不足、进食少、出血量变化、贫血风险或身体紧张叠在一起有关。"
+                "先坐下或躺一会儿，补一点温水；如果头晕明显、快晕倒、心慌或出血异常，建议尽快联系医生。"
+                "以上仅供参考。"
+            )
+        if any(term in compact for term in ("肚子疼", "肚子痛", "腹痛", "痛经", "小腹痛")):
+            return (
+                "经期腹痛常见原因之一是子宫收缩带来的不适，也可能被睡眠、压力和受凉感放大。"
+                "可以先热敷小腹、放慢活动强度；如果疼痛剧烈、和平时明显不同或伴随异常出血，建议咨询医生。以上仅供参考。"
+            )
         return (
             "这个问题我先给一个谨慎答复：经前/经期情绪突然变化，可能和激素水平变化、睡眠、疼痛、压力"
             "以及当天事件叠加有关，个体差异会很大。这里仅供参考，不代表诊断；如果波动明显影响生活，"

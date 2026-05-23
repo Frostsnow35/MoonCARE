@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import Any, List
 import json
 
 from app.database import get_db
@@ -11,6 +11,28 @@ from app.services.cycle_predictor import CyclePredictor
 from app.api.v1.deps import get_current_user_id
 
 router = APIRouter(prefix="/menstrual", tags=["月经周期"])
+
+
+def _decode_symptoms(value: Any) -> List[str] | None:
+    """Decode symptoms stored as JSON text into a response-ready list."""
+    if not value:
+        return None
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            if isinstance(decoded, list):
+                return [str(item) for item in decoded]
+        except json.JSONDecodeError:
+            return [value]
+    return [str(value)]
+
+
+def _prepare_record_response(record: MenstrualRecord) -> MenstrualRecord:
+    """Normalize DB-only fields before FastAPI response validation."""
+    record.symptoms = _decode_symptoms(record.symptoms)
+    return record
 
 
 @router.post("/record", response_model=MenstrualRecordResponse)
@@ -70,7 +92,7 @@ async def create_menstrual_record(
     predictor = CyclePredictor(db)
     predictor.update_prediction(user_id)
 
-    return menstrual_record
+    return _prepare_record_response(menstrual_record)
 
 
 @router.get("/records", response_model=List[MenstrualRecordResponse])
@@ -84,10 +106,8 @@ async def get_menstrual_records(
         MenstrualRecord.user_id == user_id
     ).order_by(MenstrualRecord.start_date.desc()).limit(limit).all()
 
-    # Parse symptoms JSON
     for record in records:
-        if record.symptoms:
-            record.symptoms = json.loads(record.symptoms)
+        _prepare_record_response(record)
 
     return records
 
@@ -153,6 +173,8 @@ async def update_menstrual_record(
 
     if record.end_date:
         existing.duration = (record.end_date - record.start_date).days
+    else:
+        existing.duration = None
 
     db.commit()
     db.refresh(existing)
@@ -161,10 +183,7 @@ async def update_menstrual_record(
     predictor = CyclePredictor(db)
     predictor.update_prediction(user_id)
 
-    if existing.symptoms:
-        existing.symptoms = json.loads(existing.symptoms)
-
-    return existing
+    return _prepare_record_response(existing)
 
 
 @router.delete("/record/{record_id}")

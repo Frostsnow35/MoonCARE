@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.services.awareness_memory_provider import AwarenessLocalProvider
 from app.services.chat_memory_service import ChatMemoryService
+from app.services.health_context_service import HealthContextService
 from app.utils.safety import contains_crisis_signal
 
 
@@ -54,7 +55,20 @@ class ProductMemoryService:
                 "awareness_recalled": False,
                 "awareness_items": 0,
                 "fallback_reason": None,
+                "health_context_available": False,
             }
+        )
+        health_context = self._build_health_context(user_id)
+        context["health_context"] = health_context["health_context"]
+        context["health_state"] = health_context["health_state"]
+        memory_state["health_context_available"] = bool(
+            health_context["health_state"].get("available")
+        )
+        memory_state["health_context_has_cycle"] = bool(
+            health_context["health_state"].get("has_cycle")
+        )
+        memory_state["health_context_has_diary"] = bool(
+            health_context["health_state"].get("has_diary")
         )
 
         if not self.awareness_provider:
@@ -79,6 +93,24 @@ class ProductMemoryService:
 
         context["memory_state"] = memory_state
         return context
+
+    def _build_health_context(self, user_id: int) -> Dict[str, Any]:
+        """Build cycle and diary context without blocking chat if it fails."""
+        try:
+            return HealthContextService(self.db).build_prompt_context(user_id=user_id)
+        except Exception as exc:
+            logger.warning("Failed to build health context: %s", exc)
+            return {
+                "health_context": "暂无可用的周期/日记上下文。",
+                "health_state": {
+                    "available": False,
+                    "has_cycle": False,
+                    "has_diary": False,
+                    "cycle_phase": None,
+                    "cycle_day": None,
+                    "diary_count": 0,
+                },
+            }
 
     def capture_user_message(
         self,

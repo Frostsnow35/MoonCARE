@@ -24,7 +24,6 @@
             <input
               v-model.trim="email"
               type="email"
-              required
               autocomplete="email"
               placeholder="your@email.com"
               class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-100 outline-none transition-all text-sm"
@@ -39,7 +38,6 @@
             <input
               v-model="password"
               type="password"
-              required
               autocomplete="current-password"
               placeholder="请输入密码"
               class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-100 outline-none transition-all text-sm"

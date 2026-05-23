@@ -39,8 +39,20 @@ class Router:
         """Return the crisis-safe intervention copy."""
         return SAFE_INTERVENTION_FALLBACK
 
-    def _knowledge_fallback(self) -> str:
+    def _knowledge_fallback(self, message: str = "") -> str:
         """Return a cautious non-diagnostic answer when knowledge generation is unavailable."""
+        compact = "".join((message or "").split())
+        if "头晕" in compact:
+            return (
+                "经期头晕可能和疼痛、睡眠不足、进食少、出血量变化或身体紧张叠在一起有关。"
+                "先坐下或躺一会儿，补一点温水；如果头晕明显、快晕倒、心慌或出血异常，建议尽快联系医生。"
+                "以上仅供参考。"
+            )
+        if any(term in compact for term in ("肚子疼", "肚子痛", "腹痛", "痛经", "小腹痛")):
+            return (
+                "经期腹痛常见原因之一是子宫收缩带来的不适，也可能被睡眠、压力和受凉感放大。"
+                "可以先热敷小腹、放慢活动强度；如果疼痛剧烈、和平时明显不同或伴随异常出血，建议咨询医生。以上仅供参考。"
+            )
         return KNOWLEDGE_FALLBACK_REPLY
 
     @property
@@ -145,12 +157,12 @@ class Router:
     def _run_knowledge(self, message: str, state: Dict[str, Any]) -> Tuple[str, str]:
         """Run the knowledge agent or return a cautious knowledge fallback."""
         if self.knowledge is None:
-            return self._knowledge_fallback(), "knowledge_fallback"
+            return self._knowledge_fallback(message), "knowledge_fallback"
         try:
             return self.knowledge.respond(message, state), "knowledge"
         except Exception as exc:
             logger.exception("[Router] KnowledgeAgent error: %s", exc)
-            return self._knowledge_fallback(), "knowledge_fallback"
+            return self._knowledge_fallback(message), "knowledge_fallback"
 
     def _run_support(self, message: str, state: Dict[str, Any]) -> Tuple[str, str]:
         """Run the support agent or return a brief human handoff copy."""

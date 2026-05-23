@@ -163,6 +163,25 @@ class P0UserIsolationTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_menstrual_create_returns_symptoms_as_list(self):
+        _user_id, headers = self._create_user("cycle-create@example.com")
+
+        response = self.client.post(
+            "/api/v1/menstrual/record",
+            json={
+                "start_date": "2026-05-20",
+                "end_date": "2026-05-22",
+                "flow_intensity": 3,
+                "symptoms": ["cramps", "fatigue"],
+                "notes": "create response shape",
+            },
+            headers=headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["symptoms"], ["cramps", "fatigue"])
+
     def test_emotion_routes_ignore_query_user_id_and_use_authenticated_user(self):
         from app.models.biometric import BiometricData
         from app.models.menstrual import MenstrualRecord

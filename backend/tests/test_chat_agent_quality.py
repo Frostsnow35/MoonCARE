@@ -24,8 +24,39 @@ class ChatAgentQualityTests(unittest.TestCase):
         self.assertTrue(any(marker in reply for marker in ["啦", "呀", "呢", "🌷", "💗", "🫶"]))
         self.assertIn("心里", reply)
         self.assertIn("身体", reply)
-        self.assertIn("愿意说说", reply)
+        self.assertNotIn("更像什么感觉", reply)
         self.assertNotIn("被人惹到了、身体不舒服，还是事情太多", reply)
+
+    def test_clear_body_discomfort_comforts_and_guides_without_more_questioning(self):
+        from app.services.response_quality_service import ResponseQualityGuard
+
+        guard = ResponseQualityGuard()
+        reply = guard.direct_reply_if_applicable(
+            "我来月经了，头晕，小腹也很痛",
+            {"cycle_phase": "经期", "risk_level": "low"},
+        )
+
+        self.assertTrue(reply)
+        self.assertIn("头晕", reply)
+        self.assertTrue(any(marker in reply for marker in ["坐", "躺", "热敷", "温水", "休息"]))
+        for forbidden in ["消耗掉一点", "被看见", "待一会儿", "愿意", "说说"]:
+            self.assertNotIn(forbidden, reply)
+
+    def test_clear_emotional_context_gets_support_not_interview_question(self):
+        from app.services.response_quality_service import ResponseQualityGuard
+
+        guard = ResponseQualityGuard()
+        reply = guard.direct_reply_if_applicable(
+            "我因为和男朋友吵架很委屈",
+            {"cycle_phase": "未知", "risk_level": "low"},
+        )
+
+        self.assertTrue(reply)
+        self.assertIn("男朋友", reply)
+        self.assertIn("委屈", reply)
+        self.assertTrue(any(marker in reply for marker in ["抱", "缓", "陪", "站在你这边"]))
+        for forbidden in ["愿意说说", "更像什么感觉", "什么样的难受", "待一会儿"]:
+            self.assertNotIn(forbidden, reply)
 
     def test_reply_repair_removes_repeated_sentence(self):
         from app.services.response_quality_service import ResponseQualityGuard
@@ -53,10 +84,10 @@ class ChatAgentQualityTests(unittest.TestCase):
         self.assertIn("身体不舒服", reply)
         self.assertIn("我会", reply)
         self.assertTrue(any(marker in reply for marker in ["啦", "呀", "呢", "🫶", "💗", "🌷"]))
+        self.assertNotIn("消耗掉一点", reply)
+        self.assertNotIn("被看见", reply)
         for forbidden in [
             "尤其是来月经或经期前后",
-            "热敷",
-            "温水",
             "蜷起来",
             "出血异常",
             "专业医生",
@@ -91,8 +122,8 @@ class ChatAgentQualityTests(unittest.TestCase):
         self.assertIn("来月经", reply)
         self.assertIn("真的很痛", reply)
         self.assertNotIn("来月经的时候身体不舒服真的会把人消耗掉一点", reply)
-        self.assertNotIn("热敷", reply)
-        self.assertNotIn("温水", reply)
+        self.assertNotIn("愿意", reply)
+        self.assertNotIn("说说", reply)
 
 
 class KnowledgeAgentLocalRagTests(unittest.TestCase):
@@ -116,6 +147,20 @@ class KnowledgeAgentLocalRagTests(unittest.TestCase):
         self.assertIn("经前", reply)
         self.assertIn("仅供参考", reply)
         self.assertNotIn("暂时没有相关信息", reply)
+
+    def test_knowledge_agent_fallback_answers_the_specific_symptom(self):
+        from app.agents import knowledge_agent as knowledge_module
+
+        with patch.object(knowledge_module, "LLMService", side_effect=ValueError("missing api key")):
+            agent = knowledge_module.KnowledgeAgent()
+
+        reply = agent.respond("经期为什么会头晕？", {})
+
+        self.assertIn("头晕", reply)
+        self.assertIn("经期", reply)
+        self.assertIn("仅供参考", reply)
+        self.assertNotIn("情绪突然变化", reply)
+        self.assertNotIn("我帮你一起梳理规律", reply)
 
 
 class StreamingFallbackTests(unittest.TestCase):
@@ -183,6 +228,50 @@ class AgentServiceQualityGuardTests(unittest.TestCase):
         self.assertEqual(response["intent"], "support_quality_guard")
         self.assertTrue(response.get("suppress_assessment_prompt"))
         self.assertIn("\u8eab\u4f53\u4e0d\u8212\u670d", response["message"])
+
+    def test_timeout_fallback_is_contextual_not_fixed_template(self):
+        from app.services.agent_service import AgentService
+
+        service = AgentService()
+        reply = service._timeout_fallback(
+            "我今天被老板批评了，心里乱成一团",
+            {"risk_level": "low", "agent_mode": "support"},
+        )
+
+        self.assertIn("老板批评", reply)
+        self.assertNotIn("最明显的那一点", reply)
+        self.assertNotIn("刚才没有顺利接上", reply)
+        self.assertNotIn("你可以继续说下一句", reply)
+
+    def test_knowledge_response_suppresses_hidden_assessment_prompt(self):
+        import asyncio
+        from app.services.agent_service import AgentService
+
+        async def run():
+            service = AgentService()
+            with patch.object(
+                service,
+                "_route_with_deadline",
+                return_value=("经期头晕可能和疼痛、睡眠、出血量变化有关。以上仅供参考。", "knowledge"),
+            ):
+                return await service.get_response(
+                    user_id=1,
+                    session_id="knowledge-no-probe",
+                    user_message="经期为什么会头晕？",
+                    context={"conversation_memory": {"conversation_messages": []}},
+                    agent_mode="knowledge",
+                )
+
+        response = asyncio.run(run())
+
+        self.assertTrue(response.get("suppress_assessment_prompt"))
+        self.assertEqual(response["intent"], "knowledge")
+
+    def test_frontend_failure_copy_does_not_expose_template_failure(self):
+        chat_view = (BACKEND_ROOT.parent / "frontend" / "src" / "views" / "Chat.vue").read_text(encoding="utf-8")
+
+        self.assertNotIn("刚才没有顺利接上完整回复", chat_view)
+        self.assertNotIn("刚才没有顺利接上。你可以直接继续说一句", chat_view)
 
 
 class AssessmentTimingTests(unittest.TestCase):

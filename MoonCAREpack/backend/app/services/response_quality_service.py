@@ -107,6 +107,13 @@ class ResponseQualityGuard:
         ):
             return self._positive_shift_reply(message, state)
 
+        stale_support_terms = ("消耗掉一点", "被看见", "愿意说说看", "更像什么感觉")
+        if self._is_body_discomfort(message, state) and any(term in original_reply for term in stale_support_terms):
+            return self._body_discomfort_reply(message, state)
+
+        if self._is_emotional_distress(message) and any(term in original_reply for term in stale_support_terms):
+            return self._emotional_distress_reply(message, state)
+
         if self._is_body_discomfort(message, state) and self._is_technical_or_thin_reply(original_reply):
             return self._body_discomfort_reply(message, state)
 
@@ -228,7 +235,8 @@ class ResponseQualityGuard:
         ):
             return True
         closed_prompt = "被人惹到了、身体不舒服，还是事情太多"
-        return closed_prompt in compact_reply
+        over_questioning_terms = ("更像什么感觉", "什么样的难受", "愿意说说看")
+        return closed_prompt in compact_reply or any(term in compact_reply for term in over_questioning_terms)
 
     def _is_knowledge_question(self, message: str) -> bool:
         """Return whether a short message is primarily asking for an explanation."""
@@ -278,7 +286,9 @@ class ResponseQualityGuard:
             "剧痛",
             "出血异常",
             "血很多",
-            "头晕",
+            "头晕得厉害",
+            "头晕很厉害",
+            "站不稳",
             "晕倒",
             "发烧",
             "和平时不一样",
@@ -361,6 +371,23 @@ class ResponseQualityGuard:
             return "低落"
         return "这种感受"
 
+    def _clear_emotional_context_reply(self, message: str, emotion: str) -> str:
+        """Return support that follows a concrete event without asking again."""
+        compact = "".join((message or "").split())
+        if "男朋友" in compact and "吵架" in compact:
+            return (
+                f"我听到啦，和男朋友吵架后的{emotion}真的会很扎心。"
+                "这不是你在小题大做，是那一刻确实需要有人站在你这边。"
+                "先抱抱自己、慢慢呼一口气，我会陪你把这团情绪一点点放下来 💗"
+            )
+        if "男朋友" in compact:
+            return (
+                f"我听到啦，和男朋友有关的这份{emotion}很真实。"
+                "你不用马上证明自己为什么难受，先让自己靠稳一点。"
+                "我会站在你这边，陪你慢慢把这件事理顺 💗"
+            )
+        return ""
+
     def _cycle_note(self, state: Dict, message: str = "") -> str:
         """Return a non-diagnostic menstrual-context note when relevant."""
         if self._mentions_menstrual_context(message):
@@ -381,8 +408,8 @@ class ResponseQualityGuard:
         if self._has_urgent_body_signal(compact):
             return (
                 "我听到啦，这种不舒服听起来已经很难靠自己硬扛了。"
-                "你可以先让身边可信任的人知道，同时尽快联系医生或当地急诊；我这里不能替代医生判断，但会陪你把当下稳住。"
-                "你现在身边有人可以陪你吗？"
+                "先让身边可信任的人知道，同时尽快联系医生或当地急诊；我这里不能替代医生判断，但会陪你把当下稳住。"
+                "先坐下或躺好，别一个人硬撑着。"
             )
 
         previous_body_context = self._previous_body_context(state)
@@ -390,8 +417,15 @@ class ResponseQualityGuard:
             quoted_message = self._truncate_context_phrase(message, 20)
             return (
                 f"我接上了，刚才你说{previous_body_context}，现在这句“{quoted_message}”听起来是在同一份不舒服里继续往下走。"
-                "它可以先不被解释成原因，也可以先不变成办法。"
-                "你可以只说最难忍的那一小块，我会跟着你听 🫶"
+                "这真的很折磨人，先把身体放到最省力的位置，能热敷就轻轻热敷一下。"
+                "我会陪你把这一阵慢慢撑过去 🫶"
+            )
+
+        if "头晕" in compact and any(term in compact for term in ("小腹", "肚子", "腹痛", "痛", "疼")):
+            return (
+                "我听到啦，来月经时头晕、小腹痛真的很不好受。"
+                "先坐下或躺一会儿，能热敷就轻轻热敷小腹，慢慢喝一点温水。"
+                "如果头晕明显、站不稳或出血异常，要尽快联系身边人和医生哦。"
             )
 
         if "来月经" in compact or "经期" in compact or "例假" in compact or "姨妈" in compact:
@@ -406,25 +440,33 @@ class ResponseQualityGuard:
             felt_sense = "身体不舒服"
 
         return (
-            f"我听到啦，{felt_sense}真的会把人消耗掉一点。"
-            "我们可以先只陪它待一会儿，让这份不舒服被看见。"
-            "你愿意把它现在的样子慢慢说给我听吗？我会在这里听着 🫶"
+            f"我听到啦，{felt_sense}真的不好受，也很容易让人没力气。"
+            "先把身体放到舒服一点的位置，喝一点温水或靠着休息一下。"
+            "我会在这里陪你慢慢稳下来 🫶"
         )
 
     def _emotional_distress_reply(self, message: str, state: Dict) -> str:
         """Immediate support for short emotional disclosures without waiting for the model."""
         emotion = self._named_emotion(message, state)
+        clear_context_reply = self._clear_emotional_context_reply(message, emotion)
+        if clear_context_reply:
+            return clear_context_reply
+
         if self._is_ambiguous_distress(message):
-            first_sentence = "我听到啦，现在好像是心里或身体有哪里不太舒服。"
+            return (
+                "我听到啦，现在好像是心里或身体有哪里不太舒服。"
+                "这份感觉可以先慢慢放在这里，我们不赶时间。"
+                "我会陪你稳一小会儿，先不用把它整理成很完整的话 🌷"
+            )
         else:
-            first_sentence = f"我听到啦，这份{emotion}先可以在这里待一会儿。"
+            first_sentence = f"我听到啦，这份{emotion}是真的不好受。"
 
         cycle_note = self._cycle_note(state, message)
         return (
             f"{first_sentence}"
-            "我们先不急着把它整理成答案，你可以按自己的节奏慢慢说呀 🌷"
+            "先让自己靠稳一点，慢慢呼一口气。"
             f"{cycle_note}"
-            "你愿意说说看，这种难受现在更像什么感觉吗？我会安静听着。"
+            "我会陪你把这股情绪一点点放下来 🌷"
         )
 
     def _open_disclosure_reply(self, state: Dict) -> str:

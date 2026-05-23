@@ -107,7 +107,7 @@ class AgentService:
         guidance = {
             "support": (
                 "当前是情绪陪伴模式：谨慎共情，只能命名用户已经明确表达的情绪，不替用户添加没有说出口的感受；"
-                "先回应用户原话里的具体事件，每次只给一个小问题或一个小行动建议；"
+                "先回应用户原话里的具体事件；如果用户已经把原因或症状说清楚，本轮不要继续追问，改为安慰和一个小行动建议；"
                 "当用户明确需要照顾安排时，给3步以内的轻量照护计划。"
             ),
             "knowledge": (
@@ -305,6 +305,8 @@ class AgentService:
         state["memory_context"] = conversation_memory.get("memory_context", "暂无可用长期记忆。")
         state["recent_context"] = conversation_memory.get("recent_context", "暂无最近对话。")
         state["retrieved_context"] = conversation_memory.get("retrieved_context", "暂无检索片段。")
+        state["health_context"] = conversation_memory.get("health_context", "暂无可用的周期/日记上下文。")
+        state["health_state"] = conversation_memory.get("health_state", {})
         state["conversation_messages"] = conversation_memory.get("conversation_messages", [])
         state["mode_guidance"] = self._mode_guidance(agent_mode)
         state["memory_state"] = conversation_memory.get(
@@ -331,6 +333,51 @@ class AgentService:
             timeout=max(float(self.reply_timeout_seconds), 0.01),
         )
 
+    def _fallback_topic(self, user_message: str, limit: int = 28) -> str:
+        """Extract a short user-facing topic for graceful degraded replies."""
+        topic = " ".join((user_message or "").split())
+        for prefix in ("我今天", "我现在", "我刚才", "我感觉", "我觉得", "我"):
+            if topic.startswith(prefix) and len(topic) > len(prefix) + 4:
+                topic = topic[len(prefix):]
+                break
+        topic = topic.strip("，。！？? ")
+        if len(topic) > limit:
+            topic = f"{topic[: limit - 1]}…"
+        return topic or "这件事"
+
+    def _knowledge_degraded_reply(self, user_message: str) -> str:
+        """Return a question-specific knowledge fallback without exposing runtime failure."""
+        compact = "".join((user_message or "").split())
+        if "头晕" in compact:
+            return (
+                "经期头晕可能和疼痛、睡眠不足、进食少、出血量变化或身体紧张叠在一起有关。"
+                "先坐下或躺一会儿，补一点温水；如果头晕明显、快晕倒、心慌或出血异常，建议尽快联系医生。"
+                "以上仅供参考。"
+            )
+        if any(term in compact for term in ("肚子疼", "肚子痛", "腹痛", "痛经", "小腹痛")):
+            return (
+                "经期腹痛常见原因之一是子宫收缩带来的不适，也可能被睡眠、压力和受凉感放大。"
+                "可以先热敷小腹、放慢活动强度；如果疼痛剧烈、和平时明显不同或伴随异常出血，建议咨询医生。以上仅供参考。"
+            )
+        if any(term in compact for term in ("烦躁", "想哭", "情绪", "低落", "易怒")):
+            return (
+                "经前或经期情绪起伏可能和激素波动、睡眠、疼痛、压力事件叠加有关，不代表你矫情。"
+                "可以先记录它出现的时间、强度和月经来后是否缓解；如果连续影响生活，建议找专业人员评估。以上仅供参考。"
+            )
+        topic = self._fallback_topic(user_message)
+        return (
+            f"关于“{topic}”，我会先给一个谨慎回答：它可能和周期阶段、睡眠、压力、疼痛或当天事件叠加有关。"
+            "先记录发生时间和身体感受，如果明显影响生活或和平时很不一样，建议咨询专业医生。以上仅供参考。"
+        )
+
+    def _support_degraded_reply(self, user_message: str) -> str:
+        """Return a contextual support fallback without a fixed failure template."""
+        topic = self._fallback_topic(user_message)
+        return (
+            f"我跟上了，你说的“{topic}”不是一句轻飘飘的话。"
+            "先让自己靠稳一点，慢慢呼一口气；这件事可以不用马上整理好，我会陪你继续往下放。"
+        )
+
     def _timeout_fallback(self, user_message: str, state: Dict[str, Any]) -> str:
         """Return a bounded fallback when the selected model misses the chat deadline."""
         risk_level = (state or {}).get("risk_level", "low")
@@ -342,7 +389,10 @@ class AgentService:
             if direct_reply:
                 return direct_reply
 
-        return "我在听。你刚说的这件事值得被认真对待，不需要先整理成很完整的话。我们可以先从此刻最明显的那一点开始说。"
+        agent_mode = (state or {}).get("agent_mode", "auto")
+        if agent_mode == "knowledge" or self._looks_like_knowledge_question(user_message):
+            return self._knowledge_degraded_reply(user_message)
+        return self._support_degraded_reply(user_message)
 
     def _soft_error_fallback(self, user_message: str, state: Dict[str, Any]) -> str:
         """Return user-facing copy for unexpected non-crisis chat failures."""
@@ -353,7 +403,10 @@ class AgentService:
             direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state)
             if direct_reply:
                 return direct_reply
-        return "我在。刚才没有顺利接上完整回复，但你说的内容我已经接住了。你可以继续说下一句，我会跟着你。"
+        agent_mode = state.get("agent_mode", "auto")
+        if agent_mode == "knowledge" or self._looks_like_knowledge_question(user_message):
+            return self._knowledge_degraded_reply(user_message)
+        return self._support_degraded_reply(user_message)
 
     def _repair_reply_quality(
         self,
@@ -433,6 +486,7 @@ class AgentService:
             "risk_level": risk_level,
             "support_context": support_context,
             "memory_context": state.get("memory_context", "暂无可用长期记忆。"),
+            "health_context": state.get("health_context", "暂无可用的周期/日记上下文。"),
             "recent_context": state.get("recent_context", "暂无最近对话。"),
             "retrieved_context": state.get("retrieved_context", "暂无检索片段。"),
             "mode_guidance": state.get("mode_guidance", ""),
@@ -445,6 +499,7 @@ class AgentService:
                 risk_level=risk_level,
                 support_context=support_context,
                 memory_context=context["memory_context"],
+                health_context=context["health_context"],
                 recent_context=context["recent_context"],
                 retrieved_context=context["retrieved_context"],
                 mode_guidance=context["mode_guidance"],
@@ -690,6 +745,7 @@ class AgentService:
             "cache_hit": cache_hit,
             "cache_similarity": cache_similarity,
             "compaction_stats": state.get("compaction_stats"),
+            "suppress_assessment_prompt": agent_mode == "knowledge" or str(agent_name).startswith("knowledge"),
         }
 
     async def get_streaming_response(
@@ -860,7 +916,7 @@ class AgentService:
                     if first_token_received:
                         break
                     fallback_token = (
-                        "你可以接着说，我会跟着你。"
+                        "我会继续陪着这件事。"
                         if full_response
                         else self._timeout_fallback(user_message, state)
                     )

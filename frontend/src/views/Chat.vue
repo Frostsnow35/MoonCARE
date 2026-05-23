@@ -440,8 +440,8 @@ async function sendMessage(messageOverride = '') {
     console.error('Failed to send message:', error)
     lastRetryMessage.value = text
     chatStore.lastError = error.message === 'CHAT_REPLY_TIMEOUT'
-      ? '刚才没有顺利接上。你可以直接继续说一句，我会接着听。'
-      : '刚才连接不太稳定，我没有发出回复。你可以直接继续说，我会接着听。'
+      ? '这边等得有点久了。你刚说的内容还在，我们可以继续围着它慢慢来。'
+      : '连接有点不稳。你刚说的内容还在，我们可以继续围着它慢慢来。'
   } finally {
     localTyping.value = false
     chatStore.isAwaitingReply = false
@@ -575,7 +575,7 @@ async function sendStreamingMessage(text) {
       chatStore.addAssistantMessage(result.reply, result.suggestions || [], result.actions || [])
     } catch (fallbackError) {
       console.error('Fallback error:', fallbackError)
-      chatStore.addAssistantMessage('我在。刚才没有顺利接上完整回复，但你可以直接继续说，我会接着听。', [], [])
+      chatStore.addAssistantMessage('我还在这里。你刚说的内容不会被丢掉，我们可以继续慢慢来。', [], [])
     }
   } finally {
     window.clearTimeout(firstChunkTimer)

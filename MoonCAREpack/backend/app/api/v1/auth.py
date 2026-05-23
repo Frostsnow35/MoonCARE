@@ -372,15 +372,20 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)) -> TokenRes
     """
     email = normalize_email(user_data.email)
 
+    # 开发模式特殊功能：当email和password都为空时，直接创建测试用户并登录
+    # 默认测试用户配置：
+    #   邮箱: test@mooncare.local
+    #   密码: test123456
     if settings.DEBUG and not email and not user_data.password:
         logger.info("Empty login detected in DEBUG mode, creating test user")
         test_email = "test@mooncare.local"
+        test_password = "test123456"
         test_user = db.query(User).filter(User.email == test_email).first()
 
         if not test_user:
             test_user = User(
                 email=test_email,
-                hashed_password=hash_password("test123456"),
+                hashed_password=hash_password(test_password),
                 nickname="测试用户",
                 is_email_verified=True,
                 password_changed_at=_utcnow(),
