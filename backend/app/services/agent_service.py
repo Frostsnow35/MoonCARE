@@ -108,6 +108,7 @@ class AgentService:
             "support": (
                 "当前是情绪陪伴模式：谨慎共情，只能命名用户已经明确表达的情绪，不替用户添加没有说出口的感受；"
                 "先回应用户原话里的具体事件；如果用户已经把原因或症状说清楚，本轮不要继续追问，改为安慰和一个小行动建议；"
+                "当用户问“我该怎么做/怎么办/接下来怎么办”时，必须结合最近上下文给2-3个具体下一步，不能只继续安抚；"
                 "当用户明确需要照顾安排时，给3步以内的轻量照护计划。"
             ),
             "knowledge": (
@@ -378,6 +379,99 @@ class AgentService:
             "先让自己靠稳一点，慢慢呼一口气；这件事可以不用马上整理好，我会陪你继续往下放。"
         )
 
+    def _looks_like_action_request(self, user_message: str) -> bool:
+        """Return whether the user is explicitly asking for next steps."""
+        compact = "".join((user_message or "").split())
+        action_markers = (
+            "我该怎么做",
+            "该怎么做",
+            "我该怎么办",
+            "该怎么办",
+            "接下来怎么办",
+            "接下来怎么做",
+            "现在怎么办",
+            "现在怎么做",
+            "能做什么",
+            "可以做什么",
+            "帮我想办法",
+            "给我点建议",
+            "怎么处理",
+            "怎么面对",
+            "怎么回复",
+        )
+        return any(marker in compact for marker in action_markers)
+
+    def _recent_user_context_text(self, state: Dict[str, Any]) -> str:
+        """Return recent user context used to make short action requests specific."""
+        state = state or {}
+        recent_user_messages: List[str] = []
+        for item in state.get("conversation_messages") or []:
+            if not isinstance(item, dict) or item.get("role") != "user":
+                continue
+            content = str(item.get("content") or "").strip()
+            if content:
+                recent_user_messages.append(content)
+
+        # For explicit "what should I do" turns, the user's latest visible
+        # conversation should outrank older profile or health memory.
+        if recent_user_messages:
+            return " ".join(recent_user_messages[-4:])
+
+        for key in ("recent_context", "health_context", "memory_context"):
+            value = str(state.get(key) or "").strip()
+            if value and not value.startswith("暂无"):
+                return value
+        return ""
+
+    def _action_request_degraded_reply(self, user_message: str, state: Dict[str, Any]) -> str:
+        """Return concrete next steps for a short help-seeking turn."""
+        context_text = self._recent_user_context_text(state)
+        compact = "".join(f"{context_text} {user_message}".split())
+
+        body_terms = ("来月经", "经期", "姨妈", "小腹", "肚子疼", "肚子痛", "腹痛", "痛经", "头晕", "出血")
+        conflict_terms = ("男朋友", "伴侣", "吵架", "争吵", "老板", "批评", "同事", "朋友", "家人", "冷战", "矛盾")
+        emotion_terms = ("烦躁", "焦虑", "崩溃", "乱成一团", "心里堵", "委屈", "难受", "想哭", "生气")
+
+        if any(term in compact for term in body_terms):
+            return (
+                "先把身体放到安全一点的位置：坐下或躺一会儿，别硬撑。"
+                "然后热敷小腹、慢慢喝一点温水，今天把任务降到最低。"
+                "如果头晕明显、站不稳、出血异常或疼痛和平时很不一样，要尽快联系身边人和医生；以上仅供参考。"
+            )
+
+        if any(term in compact for term in conflict_terms):
+            return (
+                "先别急着继续争论或马上回复对方，给自己十分钟从现场抽开一点。"
+                "然后把最想表达的一句话写下来，只保留事实和感受，先别发出去。"
+                "等情绪降一点，再决定要不要沟通；如果对方持续否定你，可以先把边界放前面。"
+            )
+
+        if any(term in compact for term in emotion_terms):
+            return (
+                "先把刺激源放远一点，比如放下手机、离开当前场景两三分钟。"
+                "然后写下此刻最卡住你的那一句，不用写完整。"
+                "接着只选一个小动作做：喝水、洗把脸、听一首歌，等身体稍微稳一点再处理事情。"
+            )
+
+        return (
+            "先暂停一下当前动作，给自己一分钟把呼吸放慢。"
+            "然后写下现在最困扰你的一个点，只写一句就够。"
+            "接着选一个最小的下一步去做：联系一个可信任的人、离开刺激环境，或把事情延后十分钟再决定。"
+        )
+
+    def _is_vague_action_reply(self, reply: str) -> bool:
+        """Return whether a reply dodges an explicit action request."""
+        compact = "".join((reply or "").split())
+        vague_terms = (
+            "我跟上了",
+            "轻飘飘",
+            "继续往下放",
+            "你可以继续说",
+            "我会先跟着你现在最明显的感受",
+            "不用马上整理好",
+        )
+        return any(term in compact for term in vague_terms)
+
     def _timeout_fallback(self, user_message: str, state: Dict[str, Any]) -> str:
         """Return a bounded fallback when the selected model misses the chat deadline."""
         risk_level = (state or {}).get("risk_level", "low")
@@ -388,6 +482,9 @@ class AgentService:
             direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state or {})
             if direct_reply:
                 return direct_reply
+
+        if self._looks_like_action_request(user_message):
+            return self._action_request_degraded_reply(user_message, state or {})
 
         agent_mode = (state or {}).get("agent_mode", "auto")
         if agent_mode == "knowledge" or self._looks_like_knowledge_question(user_message):
@@ -403,6 +500,8 @@ class AgentService:
             direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state)
             if direct_reply:
                 return direct_reply
+        if self._looks_like_action_request(user_message):
+            return self._action_request_degraded_reply(user_message, state)
         agent_mode = state.get("agent_mode", "auto")
         if agent_mode == "knowledge" or self._looks_like_knowledge_question(user_message):
             return self._knowledge_degraded_reply(user_message)
@@ -415,6 +514,8 @@ class AgentService:
         state: Dict[str, Any],
     ) -> str:
         """Repair common conversational quality failures with deterministic rules."""
+        if self._looks_like_action_request(user_message) and self._is_vague_action_reply(reply):
+            return self._action_request_degraded_reply(user_message, state or {})
         if not self.response_quality_guard:
             return reply
         try:

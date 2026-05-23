@@ -243,6 +243,86 @@ class AgentServiceQualityGuardTests(unittest.TestCase):
         self.assertNotIn("刚才没有顺利接上", reply)
         self.assertNotIn("你可以继续说下一句", reply)
 
+    def test_action_request_timeout_fallback_gives_concrete_next_steps(self):
+        from app.services.agent_service import AgentService
+
+        service = AgentService()
+        state = {
+            "risk_level": "low",
+            "agent_mode": "support",
+            "conversation_messages": [
+                {"role": "user", "content": "我因为和男朋友吵架很委屈"},
+                {"role": "assistant", "content": "我听到啦，和男朋友吵架后的委屈真的会很扎心。"},
+            ],
+        }
+        reply = service._timeout_fallback("我该怎么做", state)
+
+        for marker in ["先", "写", "等"]:
+            self.assertIn(marker, reply)
+        for forbidden in ["我跟上了", "轻飘飘", "继续往下放", "你可以继续说"]:
+            self.assertNotIn(forbidden, reply)
+
+    def test_action_request_with_body_context_gives_body_care_steps(self):
+        from app.services.agent_service import AgentService
+
+        service = AgentService()
+        state = {
+            "risk_level": "low",
+            "agent_mode": "support",
+            "conversation_messages": [
+                {"role": "user", "content": "我来月经了，头晕，小腹也很痛"},
+                {"role": "assistant", "content": "先坐下或躺一会儿，能热敷就轻轻热敷小腹。"},
+            ],
+        }
+        reply = service._soft_error_fallback("我该怎么做", state)
+
+        self.assertIn("热敷", reply)
+        self.assertIn("温水", reply)
+        self.assertIn("医生", reply)
+        self.assertNotIn("我跟上了", reply)
+
+    def test_action_request_uses_latest_visible_context_before_stale_health_memory(self):
+        from app.services.agent_service import AgentService
+
+        service = AgentService()
+        state = {
+            "risk_level": "low",
+            "agent_mode": "support",
+            "conversation_messages": [
+                {"role": "user", "content": "我因为和男朋友吵架很委屈"},
+                {"role": "assistant", "content": "我听到啦，和男朋友吵架后的委屈真的会很扎心。"},
+            ],
+            "health_context": "用户之前提到来月经、小腹痛、头晕。",
+            "memory_context": "历史记忆：经期身体不舒服。",
+        }
+        reply = service._timeout_fallback("我该怎么做", state)
+
+        self.assertIn("争论", reply)
+        self.assertIn("写", reply)
+        self.assertNotIn("热敷", reply)
+        self.assertNotIn("小腹", reply)
+
+    def test_action_request_repairs_vague_support_reply(self):
+        from app.services.agent_service import AgentService
+
+        service = AgentService()
+        state = {
+            "risk_level": "low",
+            "agent_mode": "support",
+            "conversation_messages": [
+                {"role": "user", "content": "我最近真的很烦躁，不知道该怎么办"},
+            ],
+        }
+        reply = service._repair_reply_quality(
+            "我该怎么做",
+            "我在。你可以继续说，我会先跟着你现在最明显的感受。",
+            state,
+        )
+
+        self.assertIn("先", reply)
+        self.assertTrue(any(marker in reply for marker in ["写", "离开", "放下", "暂停"]))
+        self.assertNotIn("你可以继续说", reply)
+
     def test_knowledge_response_suppresses_hidden_assessment_prompt(self):
         import asyncio
         from app.services.agent_service import AgentService
