@@ -47,4 +47,4 @@ EXPOSE 8000
 
 # 使用 gunicorn + uvicorn worker 运行，entrypoint 会先执行迁移
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "--timeout", "120", "backend.app.main:app"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "--timeout", "120", "app.main:app"]
