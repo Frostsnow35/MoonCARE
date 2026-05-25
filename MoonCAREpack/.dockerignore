@@ -1,0 +1,17 @@
+.git
+__pycache__
+*.pyc
+.env
+.env.local
+.env.production
+logs/
+*.log
+.venv
+venv
+.DS_Store
+.vscode
+.idea
+backend/.env
+backend/__pycache__
+backend/*.db
+backend/*.sqlite

@@ -22,6 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # ========== 阶段3：最终运行镜像 ==========
 FROM python:3.11-slim
 WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/backend
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl postgresql-client && \
     rm -rf /var/lib/apt/lists/*
@@ -34,17 +37,19 @@ COPY --from=backend-base --chown=appuser:appgroup /usr/local/lib/python3.11/site
 COPY --from=backend-base --chown=appuser:appgroup /usr/local/bin /usr/local/bin
 
 # 复制后端代码
-COPY backend/ ./backend/
+COPY --chown=appuser:appgroup backend/ ./backend/
 # 从前端构建阶段复制 dist
 COPY --from=frontend-builder --chown=appuser:appgroup /app/frontend/dist ./frontend/dist
 
 # 复制启动脚本并赋予执行权限
-COPY entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+COPY --chown=appuser:appgroup entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh \
+    && mkdir -p /app/backend/music \
+    && chown -R appuser:appgroup /app/backend /app/frontend /app/entrypoint.sh
 
 USER appuser
 EXPOSE 8000
 
 # 使用 gunicorn + uvicorn worker 运行，entrypoint 会先执行迁移
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "--timeout", "120", "app.main:app"]
+CMD ["gunicorn", "--chdir", "/app/backend", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8000", "--timeout", "120", "app.main:app"]

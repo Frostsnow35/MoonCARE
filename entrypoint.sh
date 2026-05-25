@@ -14,13 +14,19 @@ if [ -n "$DATABASE_URL" ]; then
     esac
 fi
 
-# 运行 Alembic 数据库迁移
 cd /app/backend
-if [ -d "migrations" ]; then
-    echo "Running database migrations..."
+
+echo "Checking application import path..."
+python -c "import app.main; print('Application import check passed.')"
+
+# 默认不迁移数据库。生产部署沿用现有数据库/volume，只有明确设置 RUN_DB_MIGRATIONS=true 才执行 Alembic。
+if [ "${RUN_DB_MIGRATIONS:-false}" = "true" ] && [ -d "migrations" ]; then
+    echo "RUN_DB_MIGRATIONS=true; running database migrations..."
     alembic upgrade head
+elif [ "${RUN_DB_MIGRATIONS:-false}" = "true" ]; then
+    echo "RUN_DB_MIGRATIONS=true but no migrations folder found; skipping alembic upgrade."
 else
-    echo "No migrations folder found; skipping alembic upgrade."
+    echo "RUN_DB_MIGRATIONS is not true; skipping database migrations."
 fi
 
 # 执行 CMD

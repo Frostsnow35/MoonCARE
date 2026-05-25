@@ -22,6 +22,12 @@ dist/
 # Logs
 *.log
 
+# Local secrets and generated handoff artifacts
+*.pem
+MoonCAREpack-server-*.zip
+*-verify.png
+t1
+
 # Awareness 本地记忆数据
 .awareness/
 

@@ -29,6 +29,9 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/login")
 
+DEBUG_TEST_EMAIL = "test@mooncare.local"
+DEBUG_TEST_PASSWORD = "test123456"
+
 
 class EmailCodePurpose(str, Enum):
     register = "register"
@@ -298,6 +301,40 @@ def _token_for_user(user: User) -> TokenResponse:
     )
 
 
+def _get_or_create_debug_test_user(db: Session) -> User:
+    """Create or refresh the local DEBUG test user for reproducible demos."""
+    test_user = db.query(User).filter(User.email == DEBUG_TEST_EMAIL).first()
+    if not test_user:
+        test_user = User(
+            email=DEBUG_TEST_EMAIL,
+            hashed_password=hash_password(DEBUG_TEST_PASSWORD),
+            nickname="测试用户",
+            is_email_verified=True,
+            password_changed_at=_utcnow(),
+        )
+        db.add(test_user)
+        db.commit()
+        db.refresh(test_user)
+        logger.info("Created DEBUG test user: %s", DEBUG_TEST_EMAIL)
+        return test_user
+
+    changed = False
+    if not verify_password(DEBUG_TEST_PASSWORD, test_user.hashed_password):
+        test_user.hashed_password = hash_password(DEBUG_TEST_PASSWORD)
+        test_user.password_changed_at = _utcnow()
+        changed = True
+    if not test_user.is_email_verified:
+        test_user.is_email_verified = True
+        changed = True
+    if not test_user.nickname:
+        test_user.nickname = "测试用户"
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(test_user)
+    return test_user
+
+
 def _send_code_response() -> ApiResponse:
     return ApiResponse(
         data={
@@ -378,23 +415,16 @@ async def login(user_data: UserLogin, db: Session = Depends(get_db)) -> TokenRes
     #   密码: test123456
     if settings.DEBUG and not email and not user_data.password:
         logger.info("Empty login detected in DEBUG mode, creating test user")
-        test_email = "test@mooncare.local"
-        test_password = "test123456"
-        test_user = db.query(User).filter(User.email == test_email).first()
+        test_user = _get_or_create_debug_test_user(db)
 
-        if not test_user:
-            test_user = User(
-                email=test_email,
-                hashed_password=hash_password(test_password),
-                nickname="测试用户",
-                is_email_verified=True,
-                password_changed_at=_utcnow(),
-            )
-            db.add(test_user)
-            db.commit()
-            db.refresh(test_user)
-            logger.info("Created test user: %s", test_email)
+        test_user.last_login_at = _utcnow()
+        db.commit()
+        db.refresh(test_user)
+        return _token_for_user(test_user)
 
+    if settings.DEBUG and email == DEBUG_TEST_EMAIL and user_data.password == DEBUG_TEST_PASSWORD:
+        logger.info("DEBUG test account login detected")
+        test_user = _get_or_create_debug_test_user(db)
         test_user.last_login_at = _utcnow()
         db.commit()
         db.refresh(test_user)

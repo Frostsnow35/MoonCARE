@@ -32,6 +32,7 @@ services:
       DATABASE_URL: postgresql://mooncare:${DB_PASSWORD:?Set DB_PASSWORD in .env before running docker compose}@postgres:5432/mooncare
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before running docker compose}
       DEBUG: ${DEBUG:-false}
+      RUN_DB_MIGRATIONS: ${RUN_DB_MIGRATIONS:-false}
       LLM_PROVIDER: ${LLM_PROVIDER:-nvidia}
       ZAI_API_KEY: ${ZAI_API_KEY:-}
       ZAI_BASE_URL: ${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4/}

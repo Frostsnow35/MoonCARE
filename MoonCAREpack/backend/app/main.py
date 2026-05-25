@@ -39,6 +39,7 @@ FRONTEND_RESERVED_PATHS = {
     "docs",
     "redoc",
     "openapi.json",
+    "health",
     "healthz",
     "metrics",
     "music",
@@ -135,7 +136,7 @@ app.add_middleware(
 
 
 # Health check endpoint
-@app.get("/healthz", tags=["Health"])
+@app.get("/health", tags=["Health"])
 async def health_check():
     return {
         "status": "healthy",
@@ -143,6 +144,12 @@ async def health_check():
         "version": settings.APP_VERSION,
         "timestamp": asyncio.get_event_loop().time()
     }
+
+
+@app.get("/healthz", tags=["Health"], include_in_schema=False)
+async def healthz_check():
+    """Backward-compatible health check for older reverse proxy configs."""
+    return await health_check()
 
 
 # Performance metrics endpoint

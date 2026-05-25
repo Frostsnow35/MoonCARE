@@ -45,6 +45,16 @@ npm run dev
 - API 文档：http://localhost:8000/docs
 - 记忆服务：http://localhost:37800
 
+## 本地测试账号
+
+本地开发默认 `DEBUG=true`，可以直接在登录页使用：
+
+| 邮箱 | 密码 |
+| --- | --- |
+| `test@mooncare.local` | `test123456` |
+
+这个账号会在首次登录时自动创建，密码会按真实账号逻辑加密存储。空邮箱、空密码登录仍保留为本地开发快捷入口。生产或公开部署必须设置 `DEBUG=false`，不要开放测试账号。
+
 ## 注意事项
 
 1. **Node.js 和 Python 3.10+ 是必须的**

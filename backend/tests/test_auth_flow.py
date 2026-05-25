@@ -190,6 +190,18 @@ class AuthFlowTests(unittest.TestCase):
         self.assertEqual(body["email"], "test@mooncare.local")
         self.assertEqual(body["nickname"], "测试用户")
 
+    def test_debug_test_account_login_creates_local_test_user(self):
+        response = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": "test@mooncare.local", "password": "test123456"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["access_token"])
+        self.assertEqual(body["email"], "test@mooncare.local")
+        self.assertEqual(body["nickname"], "测试用户")
+
 
 class LoginPageTests(unittest.TestCase):
     def test_login_form_does_not_require_credentials_for_dev_empty_login(self):
