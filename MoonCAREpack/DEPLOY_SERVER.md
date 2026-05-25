@@ -66,6 +66,10 @@ vi .env
 | `DB_PASSWORD` | PostgreSQL 强密码；如果要沿用旧数据库，必须和旧部署保持一致 |
 | `SECRET_KEY` | 长随机字符串；如果要保持旧 token 可用，沿用旧值 |
 | `RUN_DB_MIGRATIONS` | 保持 `false`，表示不执行 Alembic 迁移 |
+| `APP_PORT` | 默认 `18000`；Nginx 样例也反代到 `127.0.0.1:18000` |
+| `POSTGRES_PORT` | 默认 `15432`；仅绑定本机，避免和服务器已有 PostgreSQL 的 `5432` 冲突 |
+| `PIP_INDEX_URL` | 默认 `https://pypi.tuna.tsinghua.edu.cn/simple`，用于解决 `files.pythonhosted.org` 下载超时 |
+| `PIP_DEFAULT_TIMEOUT` / `PIP_RETRIES` | 默认 `300` / `10`，用于 Docker build 阶段 pip 下载 |
 | `NVIDIA_API_KEY` | NVIDIA provider 的真实 API key |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM_EMAIL` | 邮箱验证码需要真实 SMTP 配置 |
 
@@ -73,6 +77,12 @@ vi .env
 
 ```env
 RUN_DB_MIGRATIONS=false
+APP_PORT=18000
+POSTGRES_PORT=15432
+PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+PIP_DEFAULT_TIMEOUT=300
+PIP_RETRIES=10
 ```
 
 ## 3. 一条命令部署
@@ -89,10 +99,27 @@ bash deploy.sh
 | 包完整性检查 | 确认 `Dockerfile`、`docker-compose.yml`、`backend/app`、`frontend/dist/index.html` 存在 |
 | `.env` 检查 | 不允许占位符密钥直接部署 |
 | 数据库策略 | 确认 `RUN_DB_MIGRATIONS=false`，默认不迁移数据库 |
+| 端口检查 | 默认检查宿主机 `18000` 和 `15432` 是否已被占用 |
 | Compose 检查 | 执行 `docker compose config` |
 | 停旧容器 | 执行 `docker compose down`，不会删除 volume |
 | 构建启动 | 执行 `docker compose build app` 和 `docker compose up -d` |
-| 健康检查 | 等待 `http://127.0.0.1:8000/health` 返回成功 |
+| 健康检查 | 等待 `http://127.0.0.1:18000/health` 返回成功 |
+
+如果出现 pip 超时，例如 `ReadTimeoutError: HTTPSConnectionPool(host='files.pythonhosted.org')`，保留 `.env` 里的默认镜像设置后重建：
+
+```bash
+cd /www/wwwroot/MoonCARE
+FORCE_REBUILD=1 bash deploy.sh
+```
+
+如果清华镜像在你的服务器不可用，改用阿里云：
+
+```env
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+PIP_TRUSTED_HOST=mirrors.aliyun.com
+PIP_DEFAULT_TIMEOUT=300
+PIP_RETRIES=10
+```
 
 如果服务器上已经有旧失败镜像，强制重建：
 
@@ -115,8 +142,8 @@ docker volume rm mooncare_postgres_data
 ```bash
 cd /www/wwwroot/MoonCARE
 docker compose ps
-curl -fsS http://127.0.0.1:8000/health
-curl -fsS http://127.0.0.1:8000/healthz
+curl -fsS http://127.0.0.1:18000/health
+curl -fsS http://127.0.0.1:18000/healthz
 ```
 
 如果只是本地 clone 后给测试人员体验登录流程，保持 `DEBUG=true` 或不创建 `.env`，可用：
@@ -175,7 +202,7 @@ Nginx 样例会：
 
 | 路径 | 行为 |
 | --- | --- |
-| `/` | 代理到 `127.0.0.1:8000`，由一体化镜像提供前端 |
+| `/` | 代理到 `127.0.0.1:18000`，由一体化镜像提供前端 |
 | `/api/v1/*` | 代理 REST API |
 | `/api/v1/chat/ws/*` | 启用 WebSocket upgrade |
 | `/api/v1/chat/stream` | 关闭代理缓冲，支持 SSE |

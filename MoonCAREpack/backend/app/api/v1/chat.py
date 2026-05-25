@@ -6,7 +6,7 @@ from typing import Dict, List, AsyncGenerator, Optional
 import json
 import logging
 import uuid
-import jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from datetime import datetime
 
 from app.database import get_db, SessionLocal
@@ -54,7 +54,7 @@ def _decode_websocket_token(token: str) -> Optional[int]:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id = payload.get("sub")
         return int(user_id) if user_id is not None else None
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, TypeError, ValueError):
+    except (ExpiredSignatureError, JWTError, TypeError, ValueError):
         return None
 
 

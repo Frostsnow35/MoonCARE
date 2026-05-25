@@ -12,7 +12,7 @@ from hashlib import sha256
 from typing import Any
 
 import bcrypt
-import jwt
+from jose import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field

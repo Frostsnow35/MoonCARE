@@ -17,18 +17,24 @@ test -f frontend/dist/index.html && echo "frontend/dist/index.html: ok" || echo 
 
 echo "== Compose config =="
 docker compose config >/tmp/mooncare-compose-config.yml
-grep -E 'RUN_DB_MIGRATIONS|LLM_PROVIDER|NVIDIA_MODEL_NAME|DATABASE_URL|health' /tmp/mooncare-compose-config.yml || true
+grep -E 'APP_PORT|POSTGRES_PORT|PIP_INDEX_URL|PIP_DEFAULT_TIMEOUT|RUN_DB_MIGRATIONS|LLM_PROVIDER|NVIDIA_MODEL_NAME|DATABASE_URL|health|published' /tmp/mooncare-compose-config.yml || true
 
 echo "== Containers =="
 docker compose ps || true
+
+echo "== PostgreSQL readiness =="
+docker compose exec -T postgres pg_isready -U mooncare -d mooncare || true
+docker volume ls | grep -E 'mooncare.*postgres|postgres_data' || true
 
 echo "== App import inside image =="
 docker compose run --rm --entrypoint sh app -lc 'pwd; ls -la /app/backend/app; cd /app/backend; python -c "import sys; print(sys.path); import app.main; print(app.main.app.title)"' || true
 
 echo "== Health =="
-curl -fsS http://127.0.0.1:8000/health || true
+APP_PORT_VALUE="$(grep -E '^APP_PORT=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+APP_PORT_VALUE="${APP_PORT_VALUE:-18000}"
+curl -fsS "http://127.0.0.1:${APP_PORT_VALUE}/health" || true
 echo
-curl -fsS http://127.0.0.1:8000/healthz || true
+curl -fsS "http://127.0.0.1:${APP_PORT_VALUE}/healthz" || true
 echo
 
 echo "== Recent app logs =="
