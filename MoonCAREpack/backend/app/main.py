@@ -137,7 +137,7 @@ app.add_middleware(
 
 
 # Health check endpoint
-@app.get("/health", tags=["Health"])
+@app.get("/healthz", tags=["Health"])
 async def health_check():
     return {
         "status": "healthy",
@@ -147,8 +147,8 @@ async def health_check():
     }
 
 
-@app.get("/healthz", include_in_schema=False)
-async def healthz_check():
+@app.get("/health", include_in_schema=False)
+async def health_alias():
     return await health_check()
 
 

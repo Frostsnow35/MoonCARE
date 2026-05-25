@@ -13,7 +13,8 @@ test -f Dockerfile && echo "Dockerfile: ok" || echo "Dockerfile: missing"
 test -f docker-compose.yml && echo "docker-compose.yml: ok" || echo "docker-compose.yml: missing"
 test -f .env && echo ".env: ok" || echo ".env: missing"
 test -d backend/app && echo "backend/app: ok" || echo "backend/app: missing"
-test -f frontend/dist/index.html && echo "frontend/dist/index.html: ok" || echo "frontend/dist/index.html: missing"
+test -f frontend/package.json && echo "frontend/package.json: ok" || echo "frontend/package.json: missing"
+test -d frontend/src && echo "frontend/src: ok" || echo "frontend/src: missing"
 
 echo "== Compose config =="
 docker compose config >/tmp/mooncare-compose-config.yml

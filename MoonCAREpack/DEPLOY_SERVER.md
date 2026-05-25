@@ -17,7 +17,8 @@ diagnose.sh
 .env.example
 backend/app/
 backend/requirements.txt
-frontend/dist/index.html
+frontend/package.json
+frontend/src/
 deploy/nginx/mooncare-ip.conf
 ```
 
@@ -96,9 +97,9 @@ bash deploy.sh
 
 | 步骤 | 行为 |
 | --- | --- |
-| 包完整性检查 | 确认 `Dockerfile`、`docker-compose.yml`、`backend/app`、`frontend/dist/index.html` 存在 |
+| 包完整性检查 | 确认 `Dockerfile`、`docker-compose.yml`、`backend/app`、`frontend/package.json`、`frontend/src` 存在 |
 | `.env` 检查 | 不允许占位符密钥直接部署 |
-| 数据库策略 | 确认 `RUN_DB_MIGRATIONS=false`，默认不迁移数据库 |
+| 数据库策略 | 默认使用 PostgreSQL volume 持久化；空库由应用建表，设置 `RUN_DB_MIGRATIONS=true` 时会执行 Alembic |
 | 端口检查 | 默认检查宿主机 `18000` 和 `15432` 是否已被占用 |
 | Compose 检查 | 执行 `docker compose config` |
 | 停旧容器 | 执行 `docker compose down`，不会删除 volume |
@@ -135,7 +136,7 @@ docker compose down -v
 docker volume rm mooncare_postgres_data
 ```
 
-这两类命令会删除数据库 volume。
+这两类命令会删除数据库 volume；当前 Compose 还会使用 `music_data` 保存内置和上传音乐，执行 `down -v` 也会删除该音乐 volume。
 
 ## 4. 成功后的验证
 
@@ -210,7 +211,7 @@ Nginx 样例会：
 
 ## 7. 数据库和备份
 
-当前部署默认使用 Docker volume `postgres_data` 保存数据库。目录 `/www/backup` 和 30 日保留策略已经写入 `.env.example`，但备份脚本需要单独执行或后续接入定时任务。
+当前部署默认使用 Docker volume `postgres_data` 保存数据库，使用 `music_data` 保存内置和上传音乐。目录 `/www/backup` 和 30 日保留策略已经写入 `.env.example`，但备份脚本需要单独执行或后续接入定时任务。
 
 立即手动备份示例：
 

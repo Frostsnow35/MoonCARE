@@ -1,0 +1,23 @@
+{
+  "name": "MoonCARE",
+  "version": "1.0.0",
+  "description": "智能情绪管理平台 - 经期追踪、PMS筛查、AI陪伴",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "python -m uvicorn app.main:app --app-dir backend --reload --port 8000",
+    "dev:frontend": "cd frontend && npm run dev -- --host 127.0.0.1 --port 3000",
+    "build": "cd frontend && npm run build",
+    "start": "cd frontend && npm run dev",
+    "docker:config": "docker compose config",
+    "docker:up": "docker compose up --build",
+    "awareness:start": "npx --yes @awareness-sdk/local@latest start"
+  },
+  "dependencies": {
+    "@awareness-sdk/local": "^0.11.6",
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

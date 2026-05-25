@@ -1,3 +1,14 @@
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /frontend
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -26,7 +37,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir --prefer-binary gunicorn uvloop
 
 COPY --chown=appuser:appgroup backend/ ./backend/
-COPY --chown=appuser:appgroup frontend/dist ./frontend/dist
+COPY --from=frontend-build --chown=appuser:appgroup /frontend/dist ./frontend/dist
 COPY --chown=appuser:appgroup entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh \
     && mkdir -p /app/backend/music \

@@ -55,9 +55,9 @@ append_env_default() {
     fi
 }
 
-if [ ! -f "docker-compose.yml" ] || [ ! -f "Dockerfile" ] || [ ! -d "backend/app" ] || [ ! -f "frontend/dist/index.html" ]; then
+if [ ! -f "docker-compose.yml" ] || [ ! -f "Dockerfile" ] || [ ! -d "backend/app" ] || [ ! -f "frontend/package.json" ] || [ ! -d "frontend/src" ]; then
     echo "ERROR: This directory is not a complete MoonCARE deployment package."
-    echo "Expected docker-compose.yml, Dockerfile, backend/app, and frontend/dist/index.html."
+    echo "Expected docker-compose.yml, Dockerfile, backend/app, frontend/package.json, and frontend/src."
     exit 1
 fi
 
@@ -103,9 +103,7 @@ if grep -Eq '^NVIDIA_API_KEY=replace_with_' .env; then set_env_value NVIDIA_API_
 if ! grep -q '^RUN_DB_MIGRATIONS=' .env; then
     echo 'RUN_DB_MIGRATIONS=false' >> .env
 elif grep -q '^RUN_DB_MIGRATIONS=true' .env; then
-    echo "ERROR: RUN_DB_MIGRATIONS=true but this deployment is configured to use the existing database."
-    echo "Set RUN_DB_MIGRATIONS=false unless you intentionally want Alembic migration."
-    exit 1
+    echo "RUN_DB_MIGRATIONS=true; Alembic migrations will run during app startup."
 fi
 
 append_env_default APP_PORT 18000
