@@ -1,13 +1,17 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 # 等待数据库就绪（如果使用 PostgreSQL）
-if [ -n "$DATABASE_URL" ] && [[ "$DATABASE_URL" == postgresql* ]]; then
-    echo "Waiting for PostgreSQL to be ready..."
-    while ! pg_isready -d "$DATABASE_URL" -q; do
-        sleep 1
-    done
-    echo "PostgreSQL is ready."
+if [ -n "$DATABASE_URL" ]; then
+    case "$DATABASE_URL" in
+        postgresql*)
+            echo "Waiting for PostgreSQL to be ready..."
+            while ! pg_isready -d "$DATABASE_URL" -q; do
+                sleep 1
+            done
+            echo "PostgreSQL is ready."
+            ;;
+    esac
 fi
 
 # 运行 Alembic 数据库迁移

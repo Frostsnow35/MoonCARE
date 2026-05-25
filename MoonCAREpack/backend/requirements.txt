@@ -12,14 +12,10 @@ httpx==0.26.0
 numpy==1.26.3
 python-dotenv>=1.0.0
 
-sentence-transformers>=2.2.0
 openai>=1.0.0
 
 # Redis Stack for semantic caching
 redis>=5.0.0
-
-# High-performance inference engines (optional)
-vllm>=0.6.0
 
 # HTTP/2 support
 h2>=4.1.0
@@ -31,3 +27,9 @@ prometheus-client>=0.20.0
 tiktoken>=0.5.2
 
 alembic>=1.13.0
+
+# Optional: sentence-transformers (uncomment if needed, may have dependency conflicts)
+# sentence-transformers>=2.2.0
+
+# Optional: vllm for local inference (uncomment if needed, may have dependency conflicts)
+# vllm>=0.6.0
