@@ -21,15 +21,13 @@ npm install
 
 ### 2. 启动 Awareness 记忆服务
 ```bash
-npx --yes @awareness-sdk/local@latest start
+#npx --yes @awareness-sdk/local@latest start
 ```
 这会在 `localhost:37800` 启动本地记忆服务，数据存储在 `.awareness/` 目录。
 
 ### 3. 启动后端
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd backend; pip install -r requirements.txt; uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 4. 启动前端
@@ -76,5 +74,5 @@ npm run dev
 在项目根目录运行：
 ```bash
 npm install
-npm run dev  # 只启动 Awareness 服务
+#npm run dev  # 只启动 Awareness 服务
 ```
