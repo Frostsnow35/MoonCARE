@@ -1,78 +1,84 @@
-# MoonCARE 启动说明
+# MoonCARE Local Startup
 
-## 一键启动（推荐）
+MoonCARE is an existing women-focused menstrual emotion companionship and health support project. This repository is not a blank starter; local startup should preserve the current FastAPI + Vue architecture.
 
-### Windows 用户
-1. 双击运行 `start_mooncare.py`
-2. 或在终端中运行：`python start_mooncare.py`
+## Quick Start
 
-### macOS / Linux 用户
-1. 在终端中运行：`python3 start_mooncare.py`
+Prerequisites:
 
-## 手动启动
+| Tool | Required |
+| --- | --- |
+| Python | 3.10 or later |
+| Node.js | 20 or later |
+| npm | 10 or later |
 
-如果一键启动失败，可以手动依次启动：
+From the repository root:
 
-### 1. 安装前端依赖
 ```bash
-cd frontend
-npm install
-```
-
-### 2. 启动 Awareness 记忆服务
-```bash
-#npx --yes @awareness-sdk/local@latest start
-```
-这会在 `localhost:37800` 启动本地记忆服务，数据存储在 `.awareness/` 目录。
-
-### 3. 启动后端
-```bash
-cd backend; pip install -r requirements.txt; uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### 4. 启动前端
-```bash
-cd frontend
+npm run setup
 npm run dev
 ```
 
-## 访问地址
+Then open:
 
-- 前端：http://localhost:3000
-- 后端：http://localhost:8000
-- API 文档：http://localhost:8000/docs
-- 记忆服务：http://localhost:37800
+| Service | URL |
+| --- | --- |
+| Frontend | http://localhost:3000 |
+| Backend | http://localhost:8000 |
+| API docs | http://localhost:8000/docs |
 
-## 本地测试账号
+Logs are written to `logs/backend-dev.log` and `logs/frontend-dev.log`.
 
-本地开发默认 `DEBUG=true`，可以直接在登录页使用：
+## What `npm run setup` Does
 
-| 邮箱 | 密码 |
+Status: completed.
+
+| Step | Description |
+| --- | --- |
+| Environment files | Copies `.env.example`, `backend/.env.example`, and `frontend/.env.example` when local `.env` files are missing |
+| Backend dependencies | Installs `backend/requirements.txt` with the current Python interpreter |
+| Root dependencies | Installs root npm scripts and `concurrently` |
+| Frontend dependencies | Installs `frontend/package.json` dependencies |
+
+Optional local inference packages are not installed by default. If you need local embeddings or vLLM, run:
+
+```bash
+python -m pip install -r backend/requirements-optional-ai.txt
+```
+
+`vllm` is skipped on Windows by that optional requirements file because it is OS/GPU-specific. Use the OpenAI-compatible remote provider configuration for normal collaboration startup.
+
+## Manual Startup
+
+If you need separate terminals:
+
+```bash
+node scripts/run_python.js -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+cd frontend
+npm run dev -- --host 127.0.0.1 --port 3000
+cd backend; 
+pip install -r requirements.txt; 
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+## Local Test Account
+
+According to the current code, local `DEBUG=true` supports this reproducible development account:
+
+| Email | Password |
 | --- | --- |
 | `test@mooncare.local` | `test123456` |
 
-这个账号会在首次登录时自动创建，密码会按真实账号逻辑加密存储。空邮箱、空密码登录仍保留为本地开发快捷入口。生产或公开部署必须设置 `DEBUG=false`，不要开放测试账号。
+Keep `DEBUG=false` for production and public deployments.
 
-## 注意事项
+## Safety Notes
 
-1. **Node.js 和 Python 3.10+ 是必须的**
-   - Node.js：https://nodejs.org/
-   - Python：https://www.python.org/downloads/
+Status: needs verification before production.
 
-2. **Awareness 记忆服务是可选的**
-   - 它提供本地长期记忆功能
-   - 如果启动失败，系统会自动回退到本地数据库
-   - 无需账号，完全离线使用
-
-3. **如果端口被占用**
-   - 3000：前端
-   - 8000：后端
-   - 37800：记忆服务
-
-## 使用 npm 脚本启动（需先安装依赖）
-
-在项目根目录运行：
-```bash
-npm install
-#npm run dev  # 只启动 Awareness 服务
-```
+| Risk | Mitigation |
+| --- | --- |
+| Secrets leakage | Do not commit `.env`, API keys, JWT secrets, or database passwords |
+| LLM timeout | Keep configured timeout/fallback behavior enabled |
+| Health or emotion safety | Do not bypass the existing PerceptionAgent, Router, or crisis intervention path |
+| Local SQLite limits | Use PostgreSQL for multi-user or server deployments |
+| Optional AI dependencies | Keep heavy local inference packages out of the default setup path |

@@ -356,7 +356,7 @@ class ResponseQualityGuard:
             return "焦虑"
         if "想哭" in message or "委屈" in message:
             return "委屈"
-        if "低落" in message or "难过" in message or "难受" in message:
+        if "低落" in message or "难过" in message or "难受" in message or "不开心" in message:
             return "低落"
 
         support_context = (state or {}).get("support_context") or {}
@@ -376,15 +376,15 @@ class ResponseQualityGuard:
         compact = "".join((message or "").split())
         if "男朋友" in compact and "吵架" in compact:
             return (
-                f"我听到啦，和男朋友吵架后的{emotion}真的会很扎心。"
-                "这不是你在小题大做，是那一刻确实需要有人站在你这边。"
-                "先抱抱自己、慢慢呼一口气，我会陪你把这团情绪一点点放下来 💗"
+                f"我听到了。和男朋友吵架后的{emotion}真的很伤人——"
+                "不是你在小题大做，是那一刻真的需要有人站在你这边。"
+                "先抱抱自己、慢慢呼一口气。你愿意跟我说说，吵架是因为什么吗？"
             )
         if "男朋友" in compact:
             return (
-                f"我听到啦，和男朋友有关的这份{emotion}很真实。"
-                "你不用马上证明自己为什么难受，先让自己靠稳一点。"
-                "我会站在你这边，陪你慢慢把这件事理顺 💗"
+                f"我听到了，和男朋友有关的这份{emotion}很真实。"
+                "你不用马上证明自己为什么难受——这份感受本身就有分量。"
+                "你愿意跟我多说一点吗？是他做了什么、还是说了什么，让你觉得不舒服了？"
             )
         return ""
 
@@ -397,9 +397,9 @@ class ResponseQualityGuard:
     def _positive_shift_reply(self, message: str, state: Dict) -> str:
         """Reinforce a small emotional improvement without over-directing the user."""
         return (
-            "我听见了，你感觉开心一点了。这个小小的变好也值得被认真接住，不用急着把它放大成“必须一直开心”。"
-            "我们可以轻轻看一眼：刚才是什么让它出现了一点点？"
-            f"{self._cycle_note(state, message)}"
+            "真好呀，这一点点开心我帮你记住啦。不用急着把它变成「我必须一直开心」——"
+            "它只是轻轻地告诉你，今天有某个瞬间是对你温柔的。"
+            "你可以告诉我吗，刚才是什么让你觉得好了一点点？是做了什么，还是什么都没做它就来了？"
         )
 
     def _body_discomfort_reply(self, message: str, state: Dict) -> str:
@@ -440,9 +440,9 @@ class ResponseQualityGuard:
             felt_sense = "身体不舒服"
 
         return (
-            f"我听到啦，{felt_sense}真的不好受，也很容易让人没力气。"
-            "先把身体放到舒服一点的位置，喝一点温水或靠着休息一下。"
-            "我会在这里陪你慢慢稳下来 🫶"
+            f"我听到了，{felt_sense}真的很难受，有时候光是撑着就花掉大半力气。"
+            "先把身体放到舒服一点的姿势，喝一口温水，别勉强自己。"
+            "你想说说吗——是会一直痛还是一阵一阵的？还是想转移一下注意力聊聊别的？"
         )
 
     def _emotional_distress_reply(self, message: str, state: Dict) -> str:
@@ -454,27 +454,53 @@ class ResponseQualityGuard:
 
         if self._is_ambiguous_distress(message):
             return (
-                "我听到啦，现在好像是心里或身体有哪里不太舒服。"
-                "这份感觉可以先慢慢放在这里，我们不赶时间。"
-                "我会陪你稳一小会儿，先不用把它整理成很完整的话 🌷"
+                "我听进去了。有时候说不上来具体是哪种不舒服，但它就是实实在在地杵在那里。"
+                "不赶时间，也不急着给它贴标签——你可以先在这儿安静地待一会儿。"
+                "等你想开口的时候，哪怕只说一个词，我也会好好地接住 🌷"
             )
-        else:
-            first_sentence = f"我听到啦，这份{emotion}是真的不好受。"
+
+        emotion_openings = {
+            "烦躁": (
+                "我听到了。烦躁就像胸口有一团小火苗，窜来窜去，想抓又抓不住。"
+                "你不用一个人消化它——试试告诉我：这股烦躁更像是被什么点燃的？是某件事、某个人，还是身体里就是有股火？"
+            ),
+            "焦虑": (
+                "我听到了。焦虑有时候不是「脑子里在想什么」，而是身体先紧张起来——"
+                "心跳快一点、胸口闷一点、静不下来。"
+                "你可以试着告诉我，刚才是什么让你感到不安？不用讲清楚逻辑，讲感觉就行。"
+            ),
+            "委屈": (
+                "我听到了。委屈是那种明明很难受、想哭，但又怕别人觉得「不至于吧」的感觉。"
+                "你没有小题大做——不被理解本身，就已经足够让人难过了。"
+                "你愿意跟我多说一点吗？最让你觉得委屈的是哪一刻？"
+            ),
+            "低落": (
+                "我听到了。低落不像暴风雨那么猛烈，更像是心里蒙了一层灰蒙蒙的雾，做什么都提不起劲。"
+                "不用急着「好起来」——这份感觉可以先放在这儿。"
+                "如果愿意的话，试着告诉我：这份低落更像是一种什么样的累？是身体的、心里的、还是说不上来？"
+            ),
+        }
+
+        opening = emotion_openings.get(emotion, (
+            f"我听到了，这份{emotion}它真真实实地存在——不是「想太多」，也不是「没什么大不了」。"
+            "你可以试着告诉我，是什么在压着你？哪怕只是一个词，或者一件事都行。"
+        ))
 
         cycle_note = self._cycle_note(state, message)
-        return (
-            f"{first_sentence}"
-            "先让自己靠稳一点，慢慢呼一口气。"
-            f"{cycle_note}"
-            "我会陪你把这股情绪一点点放下来 🌷"
-        )
+        if cycle_note:
+            return f"{opening} {cycle_note}"
+        return opening
 
     def _open_disclosure_reply(self, state: Dict) -> str:
         """A neutral invitation that does not add unspoken emotion."""
         cycle_phase = state.get("cycle_phase", "")
+        cycle_note = ""
         if cycle_phase in {"经前期", "经期", "黄体期", "月经期"}:
-            return "我在，你可以慢慢说，不用一下子整理清楚。也可以从今天最想被听见的那一句开始；如果和经前/经期状态有关，我们也只把它当作自我观察参考，不做诊断。"
-        return "我在，你可以慢慢说，不用一下子整理清楚。先从今天最想被听见的那一句开始就好。"
+            cycle_note = "如果这几天正好和经前/经期叠在一起，身体和情绪可能会更敏感一些，我们可以把它当作一个参考记下来，不做诊断。"
+        return (
+            "我在呢。不着急，也不用把一切整理得明明白白——有时候最真实的东西，就是那些还没成形的话。"
+            f"你可以从今天最想被听见的那一句开始，哪怕只是「好累」或者「不知道怎么说」都可以。{cycle_note}"
+        ).rstrip()
 
     def _is_partner_invalidation(self, message: str) -> bool:
         """Return whether the user reports partner invalidation around being dramatic."""
@@ -489,11 +515,11 @@ class ResponseQualityGuard:
         cycle_phase = state.get("cycle_phase", "")
         cycle_note = ""
         if cycle_phase in {"经前期", "经期", "黄体期", "月经期"}:
-            cycle_note = "如果这几天正好在经前/经期，身体和情绪可能会更敏感一些，但这仅供参考，不是诊断。"
+            cycle_note = "如果这几天正好在经前/经期，身体和情绪可能会更敏感一些，但这只供参考，不是诊断。"
         else:
-            cycle_note = "如果这和经前/经期状态有重叠，也可以一起观察一下，但这仅供参考，不是诊断。"
+            cycle_note = "如果这和经前/经期状态有重叠，也可以观察一下，但这仅供参考不是诊断。"
         return (
-            "男朋友一直说你矫情，这句话本身就很容易让人觉得不被理解；"
-            "这不代表你就是矫情。"
-            f"{cycle_note}你愿意说说，他通常是在什么情况下这么说你吗？"
+            "被人说「你太矫情了」——这句话本身就是一种不公平的否定。"
+            "你的感受是真的，不是因为「太敏感」才产生的。"
+            f"你愿意说说，他通常是在什么情境下这样说的吗？{cycle_note}"
         )

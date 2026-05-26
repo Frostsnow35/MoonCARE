@@ -701,6 +701,7 @@ class AgentService:
         user_message: str,
         context: Dict,
         agent_mode: str = "auto",
+        skip_deterministic_reply: bool = False,
     ) -> Dict:
         """
         获取AI响应
@@ -729,7 +730,8 @@ class AgentService:
             state["message"] = user_message
             state["agent_mode"] = agent_mode
 
-            direct_reply = self._direct_quality_reply(user_message, state)
+            direct_reply = "" if skip_deterministic_reply else self._direct_quality_reply(user_message, state)
+            needs_llm_followup = bool(direct_reply)
             if direct_reply:
                 actions = self._generate_action_suggestions(state, "support")
                 suggestions = self._generate_conversation_suggestions(state, "support")
@@ -748,10 +750,12 @@ class AgentService:
                     "cache_similarity": 0.0,
                     "compaction_stats": state.get("compaction_stats"),
                     "suppress_assessment_prompt": True,
+                    "needs_llm_followup": needs_llm_followup,
+                    "llm_followup_reply": None,
                 }
             state["agent_mode"] = agent_mode  # 保存 agent_mode 到 state
 
-            # 3. 检查语义缓存。必须在风险感知之后执行，避免缓存绕过安全层。
+            # 3. 检查语义缓存。
             semantic_cache = self._get_semantic_cache()
             if semantic_cache and self._can_use_semantic_cache(user_message, state):
                 cached_response = semantic_cache.get_cached_response(
@@ -847,6 +851,7 @@ class AgentService:
             "cache_similarity": cache_similarity,
             "compaction_stats": state.get("compaction_stats"),
             "suppress_assessment_prompt": agent_mode == "knowledge" or str(agent_name).startswith("knowledge"),
+            "needs_llm_followup": needs_llm_followup,
         }
 
     async def get_streaming_response(

@@ -155,7 +155,41 @@ class ResponseQualityGuard:
         message = (user_message or "").strip()
         if self._is_knowledge_question(message) or self._is_open_disclosure(message):
             return ""
+        if not self._is_first_support_disclosure(state or {}):
+            return ""
+        if self._has_real_body_discomfort(message, state or {}):
+            return "我在，先别硬撑。你可以先把身体放到舒服一点的位置，我们慢慢来。\n\n"
+        if self._has_real_emotional_distress(message):
+            return "我在，先陪你稳一下。你不用马上解释清楚，可以慢慢说，我会听着。\n\n"
         return ""
+
+    def _is_first_support_disclosure(self, state: Dict) -> bool:
+        """Return whether this is the first user disclosure in the visible session context."""
+        messages = state.get("conversation_messages") or []
+        previous_user_turns = [
+            item for item in messages
+            if isinstance(item, dict) and item.get("role") == "user" and item.get("content")
+        ]
+        return len(previous_user_turns) == 0
+
+    def _has_real_emotional_distress(self, message: str) -> bool:
+        """Detect normal Chinese emotional disclosure even when legacy mojibake keywords miss it."""
+        compact = "".join((message or "").split())
+        markers = (
+            "难过", "伤心", "委屈", "想哭", "焦虑", "紧张", "不安", "烦躁", "烦", "生气",
+            "低落", "崩溃", "撑不住", "心里堵", "压力大", "害怕", "孤单", "无助",
+        )
+        return any(marker in compact for marker in markers)
+
+    def _has_real_body_discomfort(self, message: str, state: Dict) -> bool:
+        """Detect normal Chinese menstrual/body discomfort for immediate acknowledgement."""
+        compact = "".join((message or "").split())
+        markers = (
+            "来月经", "经期", "姨妈", "例假", "肚子疼", "肚子痛", "小腹痛", "腹痛",
+            "痛经", "头痛", "头晕", "腰酸", "恶心", "乏力", "没力气", "睡不着",
+        )
+        support_context = (state or {}).get("support_context") or {}
+        return any(marker in compact for marker in markers) or bool(support_context.get("body_signals"))
 
     def _dedupe_sentences(self, reply: str) -> str:
         """Remove exact repeated sentences while preserving the first occurrence."""

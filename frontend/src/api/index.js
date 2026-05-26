@@ -80,6 +80,7 @@ export const menstrualAPI = {
 
 export const diaryAPI = {
   create: (data) => api.post('/diary', data),
+  today: () => api.get('/diary/today'),
   list: (params) => api.get('/diary', { params }),
   get: (id) => api.get(`/diary/${id}`),
   update: (id, data) => api.put(`/diary/${id}`, data),
@@ -101,12 +102,13 @@ export const chatAPI = {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
   },
-  sendMessageStream: async function*(message, sessionId = null, cyclePhase = null, agentMode = 'auto') {
+  sendMessageStream: async function*(message, sessionId = null, cyclePhase = null, agentMode = 'auto', clientContext = null) {
     const params = new URLSearchParams()
     params.append('message', message)
     if (sessionId) params.append('session_id', sessionId)
     if (cyclePhase) params.append('cycle_phase', cyclePhase)
     if (agentMode) params.append('agent_mode', agentMode)
+    if (clientContext) params.append('client_context', clientContext)
 
     const headers = {
       'Accept': 'text/event-stream',
@@ -123,8 +125,7 @@ export const chatAPI = {
     const response = await fetch(`${api_base_url}/chat/stream`, {
       method: 'POST',
       headers,
-      body: params,
-      credentials: 'include'
+      body: params
     })
 
     if (!response.ok) {
@@ -146,8 +147,13 @@ export const chatAPI = {
         const chunk = buffer.substring(0, index)
         buffer = buffer.substring(index + 2)
 
-        if (chunk.startsWith('data: ')) {
-          const data = chunk.substring(5)
+        const dataLines = chunk
+          .split('\n')
+          .filter(line => line.startsWith('data: '))
+          .map(line => line.substring(6))
+
+        if (dataLines.length > 0) {
+          const data = dataLines.join('\n')
           try {
             const json = JSON.parse(data)
             yield json
@@ -172,6 +178,10 @@ export const musicAPI = {
   list: (emotionCategory = null, limit = 20) => api.get('/music/list', {
     params: { emotion_category: emotionCategory, limit }
   }),
+  upload: (formData) => api.post('/music/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  feedback: (payload) => api.post('/music/feedback', payload),
   seed: () => api.post('/music/seed')
 }
 

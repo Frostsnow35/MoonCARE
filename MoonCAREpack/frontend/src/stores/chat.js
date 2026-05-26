@@ -251,6 +251,9 @@ export const useChatStore = defineStore('chat', () => {
           setMemoryState(data.memory_state)
         }
         addAssistantMessage(data.message, data.suggestions, data.actions || [])
+      } else if (data.type === 'llm_followup') {
+        isAwaitingReply.value = false
+        addAssistantMessage(data.message, data.suggestions || [], data.actions || [])
       } else if (data.type === 'error') {
         console.error('WebSocket error:', data.message)
         isAwaitingReply.value = false

@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Dict, List, AsyncGenerator, Optional
+import asyncio
 import json
 import logging
 import uuid
@@ -258,7 +259,9 @@ async def _websocket_chat_authenticated(websocket: WebSocket):
                 agent_mode=agent_mode,
             )
             if assessment_result.assessment_prompt_hint and not response.get("suppress_assessment_prompt"):
-                response["message"] = f"{response['message']}\n\n{assessment_result.assessment_prompt_hint}"
+                response["message"] = f"{response["message"]}\n\n{assessment_result.assessment_prompt_hint}"
+
+            needs_llm_followup = response.get("needs_llm_followup", False)
 
             last_turn = db.query(func.max(Conversation.turn_number)).filter(
                 Conversation.user_id == user_id,
@@ -267,7 +270,6 @@ async def _websocket_chat_authenticated(websocket: WebSocket):
             user_turn = last_turn + 1
             assistant_turn = last_turn + 2
 
-            # Save conversation turn
             conversation = Conversation(
                 user_id=user_id,
                 session_id=session_id,
@@ -306,7 +308,78 @@ async def _websocket_chat_authenticated(websocket: WebSocket):
                 is_sensitive=is_sensitive,
             )
 
-            # Send response
+            async def _send_llm_followup() -> None:
+                """Background task: call LLM for a deeper reply, then send to the client."""
+                print(f"[_send_llm_followup] START user_message={user_message[:20]}...")
+                await asyncio.sleep(0)
+                db_followup = SessionLocal()
+                try:
+                    print(f"[_send_llm_followup] analyzing NLP...")
+                    nlp_followup = await nlp_service.analyze_text(user_message)
+                    print(f"[_send_llm_followup] NLP done, sentiment={nlp_followup.get('sentiment_score')}")
+                    intent_followup = nlp_service.get_intent(user_message)
+                    nlp_followup["intent"] = intent_followup
+                    nlp_followup["conversation_memory"] = _build_conversation_memory_context(
+                        db=db_followup,
+                        user_id=user_id,
+                        session_id=session_id,
+                        query_message=user_message,
+                        client_context=client_context,
+                    )
+                    assessment_followup = AssessmentOrchestrator(db_followup)
+                    assessment_followup.prepare_turn(
+                        user_id=user_id,
+                        chat_session_id=session_id,
+                        user_message=user_message,
+                        context=nlp_followup,
+                    )
+
+                    llm_response = await agent_service.get_response(
+                        user_id=user_id,
+                        session_id=session_id,
+                        user_message=user_message,
+                        context=nlp_followup,
+                        agent_mode=agent_mode,
+                        skip_deterministic_reply=True,
+                    )
+                    print(f"[_send_llm_followup] LLM done, reply_len={len(llm_response.get('message',''))}")
+
+                    last_t = db_followup.query(func.max(Conversation.turn_number)).filter(
+                        Conversation.user_id == user_id,
+                        Conversation.session_id == session_id,
+                    ).scalar() or 0
+                    followup_turn = last_t + 1
+                    followup_conv = Conversation(
+                        user_id=user_id,
+                        session_id=session_id,
+                        turn_number=followup_turn,
+                        role="assistant",
+                        content=llm_response["message"],
+                    )
+                    db_followup.add(followup_conv)
+                    db_followup.commit()
+                    llm_state = llm_response.get("state", {}) or {}
+                    await websocket.send_json({
+                        "type": "llm_followup",
+                        "message": llm_response["message"],
+                        "sentiment_score": nlp_followup.get("sentiment_score", 0.0),
+                        "intent": llm_response.get("intent", "support"),
+                        "is_sensitive": is_sensitive,
+                        "suggestions": llm_response.get("suggestions", []),
+                        "actions": llm_response.get("actions", []),
+                        "risk_level": llm_state.get("risk_level", "low"),
+                        "reply_status": llm_response.get("reply_status", "ok"),
+                        "elapsed_ms": llm_response.get("elapsed_ms", 0),
+                        "memory_state": memory_state,
+                    })
+                except Exception as ex:
+                    print(f"[_send_llm_followup] error: {ex}")
+                finally:
+                    db_followup.close()
+
+            if needs_llm_followup:
+                asyncio.get_running_loop().create_task(_send_llm_followup())
+
             await websocket.send_json({
                 "type": "assistant",
                 "message": response["message"],
@@ -550,7 +623,7 @@ async def stream_chat_message(
     client_context: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    """SSE 流式聊天接口 - 支持实时打字效果"""
+    """SSE 流式聊天接口 - 支持双通道响应（确定性回复 + LLM深度回复）"""
     if not message:
         raise HTTPException(status_code=400, detail="消息内容不能为空")
 
@@ -580,88 +653,156 @@ async def stream_chat_message(
         client_context=client_context,
     )
 
+    # 先检查确定性回复
+    direct_response = await agent_service.get_response(
+        user_id=user_id,
+        session_id=session_id,
+        user_message=message,
+        context=context,
+        agent_mode=agent_mode,
+    )
+    needs_llm_followup = direct_response.get("needs_llm_followup", False)
+    fast_reply = direct_response.get("message", "")
+
     async def event_stream() -> AsyncGenerator[str, None]:
-        full_response = ""
+        nonlocal needs_llm_followup, fast_reply
         
-        async for chunk in agent_service.get_streaming_response(
+        # 如果有确定性回复，立即发送
+        if fast_reply:
+            data = {
+                'type': 'direct_reply',
+                'message': fast_reply,
+                'session_id': session_id,
+                'risk_level': direct_response.get('risk_level', 'low'),
+                'sentiment_score': nlp_result.get('sentiment_score', 0.0),
+                'intent': direct_response.get('intent', 'support_quality_guard'),
+                'suggestions': direct_response.get('suggestions', []),
+                'actions': direct_response.get('actions', []),
+                'needs_llm_followup': needs_llm_followup,
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+        
+        # 如果需要 LLM followup，继续调用流式接口
+        if needs_llm_followup:
+            full_response = ""
+            
+            async for chunk in agent_service.get_streaming_response(
+                user_id=user_id,
+                session_id=session_id,
+                user_message=message,
+                context=context,
+                agent_mode=agent_mode,
+            ):
+                chunk_type = chunk.get("type")
+
+                if chunk_type == "start":
+                    data = {
+                        'type': 'start',
+                        'session_id': session_id,
+                        'risk_level': chunk.get('risk_level', 'low'),
+                        'agent_name': chunk.get('agent_name', 'support'),
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
+
+                elif chunk_type == "token":
+                    token = chunk.get("token", "")
+                    full_response += token
+                    data = {
+                        'type': 'token',
+                        'token': token,
+                        'is_final': chunk.get('is_final', False),
+                        'first_token_latency_ms': chunk.get('first_token_latency_ms', 0),
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
+                
+                elif chunk_type == "end":
+                    final_response = chunk.get("full_response") or full_response
+                    full_response = final_response
+
+                    # 保存对话记录（用户消息 + 两条AI回复）
+                    last_turn = db.query(func.max(Conversation.turn_number)).filter(
+                        Conversation.user_id == user_id,
+                        Conversation.session_id == session_id,
+                    ).scalar() or 0
+                    
+                    user_conv = Conversation(
+                        user_id=user_id,
+                        session_id=session_id,
+                        turn_number=last_turn + 1,
+                        role="user",
+                        content=message,
+                        intent=intent,
+                        sentiment_score=nlp_result.get("sentiment_score"),
+                        is_sensitive=1 if is_sensitive else 0,
+                    )
+                    # 保存确定性回复
+                    if fast_reply:
+                        fast_conv = Conversation(
+                            user_id=user_id,
+                            session_id=session_id,
+                            turn_number=last_turn + 2,
+                            role="assistant",
+                            content=fast_reply,
+                        )
+                        db.add(fast_conv)
+                    # 保存 LLM 回复
+                    llm_conv = Conversation(
+                        user_id=user_id,
+                        session_id=session_id,
+                        turn_number=last_turn + 3 if fast_reply else last_turn + 2,
+                        role="assistant",
+                        content=final_response,
+                    )
+                    db.add(user_conv)
+                    db.add(llm_conv)
+                    db.commit()
+                    
+                    memory_state = _safe_capture_memory(
+                        db=db,
+                        user_id=user_id,
+                        conversation_id=user_conv.id,
+                        message=message,
+                        context=context,
+                        is_sensitive=is_sensitive,
+                    )
+
+                    data = {
+                        'type': 'end',
+                        'session_id': session_id,
+                        'full_response': final_response,
+                        'actions': chunk.get('actions', []),
+                        'elapsed_ms': chunk.get('elapsed_ms', 0),
+                        'memory_state': memory_state,
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
+    
+    # 如果不需要 LLM followup，保存单条回复
+    if not needs_llm_followup and fast_reply:
+        last_turn = db.query(func.max(Conversation.turn_number)).filter(
+            Conversation.user_id == user_id,
+            Conversation.session_id == session_id,
+        ).scalar() or 0
+        
+        user_conv = Conversation(
             user_id=user_id,
             session_id=session_id,
-            user_message=message,
-            context=context,
-            agent_mode=agent_mode,
-        ):
-            chunk_type = chunk.get("type")
-
-            if chunk_type == "start":
-                data = {
-                    'type': 'start',
-                    'session_id': session_id,
-                    'risk_level': chunk.get('risk_level', 'low'),
-                    'agent_name': chunk.get('agent_name', 'support'),
-                }
-                yield f"data: {json.dumps(data)}\n\n"
-
-            elif chunk_type == "token":
-                token = chunk.get("token", "")
-                full_response += token
-                data = {
-                    'type': 'token',
-                    'token': token,
-                    'is_final': chunk.get('is_final', False),
-                    'first_token_latency_ms': chunk.get('first_token_latency_ms', 0),
-                }
-                yield f"data: {json.dumps(data)}\n\n"
-            
-            elif chunk_type == "end":
-                final_response = chunk.get("full_response") or full_response
-                full_response = final_response
-
-                # 保存对话记录
-                last_turn = db.query(func.max(Conversation.turn_number)).filter(
-                    Conversation.user_id == user_id,
-                    Conversation.session_id == session_id,
-                ).scalar() or 0
-                
-                user_conv = Conversation(
-                    user_id=user_id,
-                    session_id=session_id,
-                    turn_number=last_turn + 1,
-                    role="user",
-                    content=message,
-                    intent=intent,
-                    sentiment_score=nlp_result.get("sentiment_score"),
-                    is_sensitive=1 if is_sensitive else 0,
-                )
-                assistant_conv = Conversation(
-                    user_id=user_id,
-                    session_id=session_id,
-                    turn_number=last_turn + 2,
-                    role="assistant",
-                    content=final_response,
-                )
-                db.add(user_conv)
-                db.add(assistant_conv)
-                db.commit()
-                
-                memory_state = _safe_capture_memory(
-                    db=db,
-                    user_id=user_id,
-                    conversation_id=user_conv.id,
-                    message=message,
-                    context=context,
-                    is_sensitive=is_sensitive,
-                )
-
-                data = {
-                    'type': 'end',
-                    'session_id': session_id,
-                    'full_response': final_response,
-                    'actions': chunk.get('actions', []),
-                    'elapsed_ms': chunk.get('elapsed_ms', 0),
-                    'memory_state': memory_state,
-                }
-                # 再生成 SSE 格式的数据
-                yield f"data: {json.dumps(data)}\n\n"
+            turn_number=last_turn + 1,
+            role="user",
+            content=message,
+            intent=intent,
+            sentiment_score=nlp_result.get("sentiment_score"),
+            is_sensitive=1 if is_sensitive else 0,
+        )
+        assistant_conv = Conversation(
+            user_id=user_id,
+            session_id=session_id,
+            turn_number=last_turn + 2,
+            role="assistant",
+            content=fast_reply,
+        )
+        db.add(user_conv)
+        db.add(assistant_conv)
+        db.commit()
 
     return StreamingResponse(
         event_stream(),

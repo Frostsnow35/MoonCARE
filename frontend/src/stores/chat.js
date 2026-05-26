@@ -1,11 +1,15 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import { chatAPI } from '../api'
+import { chatAPI, diaryAPI } from '../api'
 
 function getChatStorageKey() {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const userId = user?.id || 'guest'
   return `mooncare_chat_session_${userId}`
+}
+
+function nextMessageId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -14,7 +18,7 @@ export const useChatStore = defineStore('chat', () => {
       label: '情绪宝宝',
       shortLabel: '自动',
       helper: '自动衔接倾听、知识解释和经期照护建议',
-      welcome: '我先在这里陪你呀。你可以随便说一点今天的感受，也可以问身体变化或怎么照顾自己。我们慢慢来，不急着整理清楚。'
+      welcome: '我先在这里陪你。你可以随便说一点今天的感受，也可以问身体变化或怎么照顾自己。我们慢慢来，不急着整理清楚。'
     },
     support: {
       label: '情绪宝宝',
@@ -30,71 +34,22 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // State
   const messages = ref([])
   const sessionId = ref(null)
   const isConnected = ref(false)
   const isLoading = ref(false)
   const isAwaitingReply = ref(false)
   const lastError = ref('')
-  const websocket = ref(null)
-  const reconnectAttempt = ref(0)
-  const shouldReconnect = ref(true)
-  const heartbeatTimer = ref(null)
   const assessmentState = ref(null)
   const assessmentSummary = ref(null)
   const memoryState = ref(null)
   const agentMode = ref('auto')
   const hasBootstrapped = ref(false)
-  // Interview state
   const isInterviewMode = ref(false)
   const interviewPhase = ref(1)
+
   const activeAgent = computed(() => AGENT_PROFILES[agentMode.value] || AGENT_PROFILES.auto)
 
-  function nextMessageId() {
-    return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  }
-
-  function getWebSocketUrl() {
-    const explicitBase = import.meta.env.VITE_WS_BASE_URL
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://mooncare.onrender.com/api/v1'
-    const token = localStorage.getItem('access_token')
-
-    const base = explicitBase
-      ? explicitBase
-      : apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:').replace(/\/api\/v1\/?$/, '')
-
-    const normalizedBase = base.replace(/\/$/, '')
-    return `${normalizedBase}/api/v1/chat/ws?token=${encodeURIComponent(token)}`
-  }
-
-  function startHeartbeat() {
-    if (heartbeatTimer.value) return
-    heartbeatTimer.value = window.setInterval(() => {
-      if (websocket.value && isConnected.value) {
-        websocket.value.send(JSON.stringify({ message: '' }))
-      }
-    }, 30000)
-  }
-
-  function stopHeartbeat() {
-    if (!heartbeatTimer.value) return
-    window.clearInterval(heartbeatTimer.value)
-    heartbeatTimer.value = null
-  }
-
-  function scheduleReconnect() {
-    if (!shouldReconnect.value) return
-    reconnectAttempt.value += 1
-
-    const delay = Math.min(30000, 500 * (2 ** Math.min(reconnectAttempt.value, 6)))
-    window.setTimeout(() => {
-      if (!shouldReconnect.value) return
-      connectWebSocket()
-    }, delay)
-  }
-
-  // Actions
   function addMessage(message, role = 'user') {
     messages.value.push({
       id: nextMessageId(),
@@ -104,7 +59,7 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
-  function addAssistantMessage(message, suggestions = [], actions = []) {
+  function addAssistantMessage(message, suggestions = [], actions = [], metadata = {}) {
     const msgId = nextMessageId()
     messages.value.push({
       id: msgId,
@@ -112,7 +67,8 @@ export const useChatStore = defineStore('chat', () => {
       role: 'assistant',
       suggestions,
       actions,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      ...metadata
     })
     return msgId
   }
@@ -125,18 +81,17 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function updateMessageActions(messageId, actions) {
-    const index = messages.value.findIndex(msg => msg.id === messageId)
-    if (index !== -1) {
-      messages.value[index].actions = actions
-    }
+    updateMessageMetadata(messageId, { actions })
   }
 
-  const EMOTION_GREETINGS = {
-    '积极': '看到你今天心情不错呀～有什么想分享的吗？我在这里陪你聊聊～',
-    '焦虑': '我注意到你今天有些烦躁，愿意说说发生了什么吗？我在这里陪你～',
-    '难过': '看到你今天心情不太好的样子，我在这里陪着你...想说什么都可以～',
-    '疲惫': '感觉你今天有些疲惫，先休息一下也好，想聊的时候我在～',
-    '中性': null
+  function updateMessageMetadata(messageId, metadata = {}) {
+    const index = messages.value.findIndex(msg => msg.id === messageId)
+    if (index !== -1) {
+      messages.value[index] = {
+        ...messages.value[index],
+        ...metadata
+      }
+    }
   }
 
   async function getTodayDiaryGreeting() {
@@ -144,35 +99,18 @@ export const useChatStore = defineStore('chat', () => {
       const token = localStorage.getItem('access_token')
       if (!token) return null
 
-      const response = await fetch('http://localhost:8000/api/v1/diary/today', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (!response.ok) return null
-
-      const data = await response.json()
-
-      if (!data.has_diary || !data.content) return null
+      const data = await diaryAPI.today?.()
+      if (!data?.has_diary || !data?.content) return null
 
       const content = data.content
-      const emotionKeywords = {
-        '积极': ['开心', '高兴', '快乐', '愉快', '幸福', '兴奋'],
-        '焦虑': ['烦躁', '焦虑', '不安', '紧张', '担心', '压力'],
-        '难过': ['难过', '伤心', '失落', '沮丧', '痛苦'],
-        '疲惫': ['累', '疲惫', '困', '无力', '疲倦']
-      }
+      const greetings = [
+        { keywords: ['开心', '高兴', '快乐', '愉快', '幸福', '兴奋'], text: '看到你今天心情不错呀。有什么想分享的吗？我在这里陪你聊聊。' },
+        { keywords: ['烦躁', '焦虑', '不安', '紧张', '担心', '压力'], text: '我注意到你今天有些紧绷。愿意说说发生了什么吗？我在这里陪你。' },
+        { keywords: ['难过', '伤心', '失落', '沮丧', '痛苦'], text: '看到你今天心情不太好，我在这里陪着你。想说什么都可以。' },
+        { keywords: ['累', '疲惫', '困', '无力', '疲劳'], text: '感觉你今天有些疲惫，先休息一下也好；想聊的时候我在。' }
+      ]
 
-      for (const [emotion, keywords] of Object.entries(emotionKeywords)) {
-        for (const keyword of keywords) {
-          if (content.includes(keyword)) {
-            return EMOTION_GREETINGS[emotion]
-          }
-        }
-      }
-
-      return null
+      return greetings.find(item => item.keywords.some(keyword => content.includes(keyword)))?.text || null
     } catch (error) {
       console.warn('Failed to get today diary:', error)
       return null
@@ -182,13 +120,11 @@ export const useChatStore = defineStore('chat', () => {
   async function bootstrapConversation() {
     if (hasBootstrapped.value || messages.value.length > 0 || isInterviewMode.value) return
 
-    let welcomeMessage = activeAgent.value.welcome
     const personalizedGreeting = await getTodayDiaryGreeting()
-    if (personalizedGreeting) {
-      welcomeMessage = personalizedGreeting
-    }
-
-    addAssistantMessage(welcomeMessage, ['我想倾诉一下', '了解经前情绪', '来个呼吸练习'])
+    addAssistantMessage(
+      personalizedGreeting || activeAgent.value.welcome,
+      ['我想倾诉一下', '了解经前情绪', '来个呼吸练习']
+    )
     hasBootstrapped.value = true
   }
 
@@ -197,111 +133,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function createSession() {
-    try {
-      const result = await chatAPI.createSession()
-      sessionId.value = result.session_id
-      return result.session_id
-    } catch (error) {
-      console.error('Failed to create session:', error)
-      throw error
-    }
-  }
-
-  function connectWebSocket() {
-    if (websocket.value && (websocket.value.readyState === WebSocket.OPEN || websocket.value.readyState === WebSocket.CONNECTING)) {
-      return
-    }
-
-    const token = localStorage.getItem('access_token')
-    if (!token) {
-      shouldReconnect.value = false
-      isConnected.value = false
-      lastError.value = '请先登录后再开始聊天。'
-      return
-    }
-
-    const wsUrl = getWebSocketUrl()
-    websocket.value = new WebSocket(wsUrl)
-
-    websocket.value.onopen = () => {
-      isConnected.value = true
-      reconnectAttempt.value = 0
-      console.log('WebSocket connected')
-      startHeartbeat()
-    }
-
-    websocket.value.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-
-      if (data.type === 'session') {
-        sessionId.value = data.session_id
-      } else if (data.type === 'assistant') {
-        isAwaitingReply.value = false
-        lastError.value = ''
-        if (Object.prototype.hasOwnProperty.call(data, 'assessment_state')) {
-          setAssessmentState(data.assessment_state)
-        }
-        if (Object.prototype.hasOwnProperty.call(data, 'memory_state')) {
-          setMemoryState(data.memory_state)
-        }
-        addAssistantMessage(data.message, data.suggestions, data.actions || [])
-      } else if (data.type === 'error') {
-        console.error('WebSocket error:', data.message)
-        isAwaitingReply.value = false
-        lastError.value = data.message || '刚才连接断了一下。你可以直接继续说，我会接着听。'
-      }
-    }
-
-    websocket.value.onclose = () => {
-      isConnected.value = false
-      console.log('WebSocket disconnected')
-      stopHeartbeat()
-      scheduleReconnect()
-    }
-
-    websocket.value.onerror = (error) => {
-      console.error('WebSocket error:', error)
-      isConnected.value = false
-      stopHeartbeat()
-      isAwaitingReply.value = false
-    }
-  }
-
-  function sendMessage(message) {
-    if (websocket.value && isConnected.value) {
-      isAwaitingReply.value = true
-      lastError.value = ''
-      const clientContext = JSON.stringify(
-        messages.value
-          .filter(item => ['user', 'assistant'].includes(item.role) && typeof item.content === 'string' && item.content.trim())
-          .slice(-12)
-          .map(item => ({
-            role: item.role,
-            content: item.content.replace(/\s+/g, ' ').trim().slice(0, 500)
-          }))
-      )
-      websocket.value.send(JSON.stringify({
-        message,
-        agent_mode: agentMode.value,
-        session_id: sessionId.value || '',
-        client_context: clientContext
-      }))
-    }
-  }
-
-  function disconnect() {
-    shouldReconnect.value = false
-    stopHeartbeat()
-    if (websocket.value) {
-      websocket.value.close()
-      websocket.value = null
-    }
-    isConnected.value = false
-  }
-
-  function enableReconnect() {
-    shouldReconnect.value = true
-    reconnectAttempt.value = 0
+    const result = await chatAPI.createSession()
+    sessionId.value = result.session_id
+    return result.session_id
   }
 
   function clearMessages() {
@@ -344,11 +178,14 @@ export const useChatStore = defineStore('chat', () => {
         sessionId: sessionId.value,
         messages: messages.value,
         agentMode: agentMode.value,
-        hasBootstrapped: hasBootstrapped.value
+        hasBootstrapped: hasBootstrapped.value,
+        assessmentState: assessmentState.value,
+        assessmentSummary: assessmentSummary.value,
+        memoryState: memoryState.value
       }
       localStorage.setItem(getChatStorageKey(), JSON.stringify(data))
-    } catch (e) {
-      console.warn('Failed to persist chat session:', e)
+    } catch (error) {
+      console.warn('Failed to persist chat session:', error)
     }
   }
 
@@ -357,21 +194,18 @@ export const useChatStore = defineStore('chat', () => {
       const stored = localStorage.getItem(getChatStorageKey())
       if (!stored) return false
       const data = JSON.parse(stored)
-      if (data.sessionId) {
-        sessionId.value = data.sessionId
-      }
-      if (data.messages && data.messages.length > 0) {
-        messages.value = data.messages
-      }
-      if (data.agentMode) {
-        agentMode.value = data.agentMode
-      }
-      if (data.hasBootstrapped !== undefined) {
-        hasBootstrapped.value = data.hasBootstrapped
-      }
-      return data.sessionId && data.messages && data.messages.length > 0
-    } catch (e) {
-      console.warn('Failed to load chat session from storage:', e)
+
+      sessionId.value = data.sessionId || null
+      messages.value = Array.isArray(data.messages) ? data.messages : []
+      agentMode.value = data.agentMode || 'auto'
+      hasBootstrapped.value = Boolean(data.hasBootstrapped)
+      assessmentState.value = data.assessmentState || null
+      assessmentSummary.value = data.assessmentSummary || null
+      memoryState.value = data.memoryState || null
+
+      return Boolean(sessionId.value && messages.value.length > 0)
+    } catch (error) {
+      console.warn('Failed to load chat session from storage:', error)
       return false
     }
   }
@@ -383,10 +217,12 @@ export const useChatStore = defineStore('chat', () => {
     lastError.value = ''
     isAwaitingReply.value = false
     memoryState.value = null
+    assessmentState.value = null
+    assessmentSummary.value = null
     localStorage.removeItem(getChatStorageKey())
   }
 
-  watch([messages, sessionId, agentMode], () => {
+  watch([messages, sessionId, agentMode, assessmentState, memoryState], () => {
     if (messages.value.length > 0 || sessionId.value) {
       persistToStorage()
     }
@@ -395,7 +231,6 @@ export const useChatStore = defineStore('chat', () => {
   const hasRestoredSession = loadFromStorage()
 
   return {
-    // State
     messages,
     sessionId,
     isConnected,
@@ -412,18 +247,14 @@ export const useChatStore = defineStore('chat', () => {
     isInterviewMode,
     interviewPhase,
     hasRestoredSession,
-    // Actions
     addMessage,
     addAssistantMessage,
     updateMessage,
     updateMessageActions,
+    updateMessageMetadata,
     bootstrapConversation,
     setAgentMode,
     createSession,
-    connectWebSocket,
-    sendMessage,
-    disconnect,
-    enableReconnect,
     clearMessages,
     clearSession,
     setAssessmentState,
