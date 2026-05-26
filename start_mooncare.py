@@ -1,225 +1,170 @@
 #!/usr/bin/env python3
-"""
-MoonCARE 一键启动脚本
-自动启动 Awareness 记忆服务、后端和前端
+"""Start the MoonCARE local development services.
+
+This script is intentionally small and conservative: it starts the existing
+FastAPI backend and Vite frontend, checks that required dependencies are
+present, and keeps logs in the repository root for troubleshooting.
 """
 
+from __future__ import annotations
+
+import os
+import shutil
+import signal
 import subprocess
 import sys
-import os
 import time
-import platform
 from pathlib import Path
 
-def print_banner():
-    print("=" * 60)
-    print("  MoonCARE - 智能情绪管理平台")
-    print("  一键启动所有服务")
-    print("=" * 60)
-    print()
 
-def check_node():
-    """检查 Node.js 是否安装"""
-    try:
-        result = subprocess.run(['node', '--version'], capture_output=True, text=True)
-        if result.returncode == 0:
-            print(f"✓ Node.js 已安装: {result.stdout.strip()}")
-            return True
-    except FileNotFoundError:
-        pass
+ROOT_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = ROOT_DIR / "backend"
+FRONTEND_DIR = ROOT_DIR / "frontend"
+LOG_DIR = ROOT_DIR / "logs"
 
-    print("✗ Node.js 未安装")
-    print("  请访问 https://nodejs.org/ 下载安装")
-    return False
 
-def check_python():
-    """检查 Python 是否安装"""
-    version = sys.version_info
-    if version.major >= 3 and version.minor >= 10:
-        print(f"✓ Python 已安装: {version.major}.{version.minor}.{version.micro}")
-        return True
+def _cmd(name: str) -> str:
+    resolved = shutil.which(name)
+    if not resolved:
+        raise RuntimeError(f"Missing command: {name}")
+    return resolved
 
-    print(f"✗ Python 版本过低或未安装: {version.major}.{version.minor}.{version.micro}")
-    print("  请访问 https://www.python.org/downloads/ 下载 Python 3.10+")
-    return False
 
-def check_npm():
-    """检查 npm 是否安装"""
-    try:
-        result = subprocess.run(['npm', '--version'], capture_output=True, text=True)
-        if result.returncode == 0:
-            print(f"✓ npm 已安装: {result.stdout.strip()}")
-            return True
-    except FileNotFoundError:
-        pass
+def _python() -> str:
+    return sys.executable
 
-    print("✗ npm 未安装")
-    print("  请安装 Node.js（包含 npm）https://nodejs.org/")
-    return False
 
-def start_awareness():
-    """启动 Awareness 记忆服务"""
-    print("\n[1/3] 启动 Awareness 记忆服务...")
-    print("  (本地记忆存储，无需账号，完全离线)")
+def _check_file(path: Path, message: str) -> None:
+    if not path.exists():
+        raise RuntimeError(f"{message}: {path}")
 
-    try:
-        # 使用 npx 启动 awareness 服务
-        process = subprocess.Popen(
-            ['npx', '--yes', '@awareness-sdk/local@latest', 'start'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
 
-        # 等待服务启动
-        print("  等待服务启动...")
-        time.sleep(5)
+def _run_check(command: list[str], cwd: Path) -> None:
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(detail or f"Command failed: {' '.join(command)}")
 
-        # 检查进程是否还在运行
+
+def check_environment() -> None:
+    """Verify that the local machine can start the app."""
+    print("[check] Verifying local tools and dependencies...")
+    _check_file(BACKEND_DIR / "app" / "main.py", "Backend entrypoint not found")
+    _check_file(FRONTEND_DIR / "package.json", "Frontend package.json not found")
+    _cmd("node")
+    _cmd("npm")
+
+    if sys.version_info < (3, 10):
+        version = ".".join(map(str, sys.version_info[:3]))
+        raise RuntimeError(f"Python 3.10+ is required, current version is {version}")
+
+    if not (ROOT_DIR / "node_modules").exists():
+        raise RuntimeError("Root dependencies are missing. Run: npm run setup")
+    if not (FRONTEND_DIR / "node_modules").exists():
+        raise RuntimeError("Frontend dependencies are missing. Run: npm run setup")
+
+    _run_check([_python(), "-c", "import fastapi, uvicorn, sqlalchemy"], ROOT_DIR)
+
+
+def ensure_local_env_files() -> None:
+    """Create local .env files from examples when they do not exist."""
+    copies = [
+        (ROOT_DIR / ".env.example", ROOT_DIR / ".env"),
+        (BACKEND_DIR / ".env.example", BACKEND_DIR / ".env"),
+        (FRONTEND_DIR / ".env.example", FRONTEND_DIR / ".env"),
+    ]
+    for source, target in copies:
+        if source.exists() and not target.exists():
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"[env] Created {target.relative_to(ROOT_DIR)} from example")
+
+
+def start_process(name: str, command: list[str], cwd: Path, log_file: Path) -> subprocess.Popen[str]:
+    """Start a service and stream its output to a log file."""
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    handle = log_file.open("w", encoding="utf-8")
+    print(f"[start] {name}: {' '.join(command)}")
+    print(f"        log: {log_file.relative_to(ROOT_DIR)}")
+    return subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=handle,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+
+
+def stop_processes(processes: list[tuple[str, subprocess.Popen[str]]]) -> None:
+    """Stop any still-running child processes."""
+    for _, process in processes:
         if process.poll() is None:
-            print("  ✓ Awareness 服务已启动 (http://localhost:37800)")
-            return process
-        else:
-            stdout, stderr = process.communicate()
-            print(f"  ✗ 启动失败: {stderr}")
-            return None
+            process.send_signal(signal.SIGTERM)
+    time.sleep(1)
+    for _, process in processes:
+        if process.poll() is None:
+            process.kill()
 
-    except Exception as e:
-        print(f"  ✗ 启动失败: {e}")
-        return None
 
-def start_backend():
-    """启动后端服务"""
-    print("\n[2/3] 启动后端 FastAPI 服务...")
-
-    backend_dir = Path(__file__).parent / "backend"
-    if not backend_dir.exists():
-        print(f"  ✗ 后端目录不存在: {backend_dir}")
-        return None
-
-    # 检查依赖
-    requirements_file = backend_dir / "requirements.txt"
-    if requirements_file.exists():
-        print("  检查 Python 依赖...")
-
-    try:
-        # 启动后端服务
-        process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"],
-            cwd=str(backend_dir),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-
-        print("  ✓ 后端服务已启动 (http://localhost:8000)")
-        print("  ✓ API 文档: http://localhost:8000/docs")
-        return process
-
-    except Exception as e:
-        print(f"  ✗ 启动失败: {e}")
-        return None
-
-def start_frontend():
-    """启动前端服务"""
-    print("\n[3/3] 启动前端 Vue 服务...")
-
-    frontend_dir = Path(__file__).parent / "frontend"
-    if not frontend_dir.exists():
-        print(f"  ✗ 前端目录不存在: {frontend_dir}")
-        return None
-
-    # 检查 npm 依赖
-    if not (frontend_dir / "node_modules").exists():
-        print("  安装前端依赖...")
-        subprocess.run(['npm', 'install'], cwd=str(frontend_dir), check=True)
-
-    try:
-        # 启动前端服务
-        process = subprocess.Popen(
-            ['npm', 'run', 'dev'],
-            cwd=str(frontend_dir),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-
-        print("  ✓ 前端服务已启动 (http://localhost:3000)")
-        return process
-
-    except Exception as e:
-        print(f"  ✗ 启动失败: {e}")
-        return None
-
-def main():
-    """主函数"""
-    print_banner()
-
-    # 检查环境
-    print("检查环境...")
-    if not check_node():
-        print("\n请先安装 Node.js")
-        sys.exit(1)
-
-    if not check_python():
-        print("\n请先安装 Python 3.10+")
-        sys.exit(1)
-
-    if not check_npm():
-        print("\n请先安装 npm（通过 Node.js）")
-        sys.exit(1)
-
-    # 启动服务
-    processes = []
-
-    awareness = start_awareness()
-    if awareness:
-        processes.append(awareness)
-    else:
-        print("\n警告: Awareness 服务启动失败，记忆功能将使用本地数据库")
-
-    backend = start_backend()
-    if backend:
-        processes.append(backend)
-    else:
-        print("\n错误: 后端服务启动失败")
-        sys.exit(1)
-
-    frontend = start_frontend()
-    if frontend:
-        processes.append(frontend)
-    else:
-        print("\n错误: 前端服务启动失败")
-        sys.exit(1)
-
-    # 打印完成信息
-    print("\n" + "=" * 60)
-    print("  所有服务启动完成！")
-    print("=" * 60)
-    print()
-    print("  前端地址:    http://localhost:3000")
-    print("  后端地址:    http://localhost:8000")
-    print("  API 文档:    http://localhost:8000/docs")
-    print("  记忆服务:    http://localhost:37800")
-    print()
-    print("  按 Ctrl+C 停止所有服务")
-    print("=" * 60)
-
-    # 等待用户中断
+def wait_for_exit(processes: list[tuple[str, subprocess.Popen[str]]]) -> int:
+    """Keep the script alive and stop all services on exit."""
     try:
         while True:
+            for name, process in processes:
+                code = process.poll()
+                if code is not None:
+                    print(f"[exit] {name} stopped with code {code}")
+                    stop_processes(processes)
+                    return code
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n\n正在停止所有服务...")
+        print("\n[stop] Stopping MoonCARE services...")
+        stop_processes(processes)
+        return 0
 
-        for proc in processes:
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except:
-                proc.kill()
 
-        print("所有服务已停止")
+def main() -> int:
+    print("MoonCARE local development launcher")
+    print("===================================")
+    try:
+        ensure_local_env_files()
+        check_environment()
+
+        backend = start_process(
+            "backend",
+            [
+                _python(),
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--app-dir",
+                "backend",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+            ],
+            ROOT_DIR,
+            LOG_DIR / "backend-dev.log",
+        )
+        frontend = start_process(
+            "frontend",
+            [_cmd("npm"), "run", "dev", "--", "--host", "127.0.0.1", "--port", "3000"],
+            FRONTEND_DIR,
+            LOG_DIR / "frontend-dev.log",
+        )
+
+        print("\nReady:")
+        print("  Frontend: http://localhost:3000")
+        print("  Backend:  http://localhost:8000")
+        print("  API docs: http://localhost:8000/docs")
+        print("Press Ctrl+C to stop.")
+        return wait_for_exit([("backend", backend), ("frontend", frontend)])
+    except RuntimeError as exc:
+        print(f"\n[error] {exc}")
+        print("Run `npm run setup` first, then retry `npm run dev`.")
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -164,6 +164,42 @@ class KnowledgeAgentLocalRagTests(unittest.TestCase):
 
 
 class StreamingFallbackTests(unittest.TestCase):
+    def test_streaming_emotional_first_turn_sends_fast_ack_before_model_reply(self):
+        import asyncio
+        from app.services import agent_service as agent_module
+
+        class FakeLLMService:
+            async def async_streaming_generate_reply(self, user_message, context):
+                yield {
+                    "token": "我会继续陪你把这件事慢慢说清楚。",
+                    "first_token_latency_ms": 1200,
+                }
+
+        async def collect_chunks():
+            service = agent_module.AgentService()
+            with patch.object(agent_module, "LLMService", FakeLLMService):
+                return [
+                    chunk
+                    async for chunk in service.get_streaming_response(
+                        user_id=1,
+                        session_id="fast-ack-session",
+                        user_message="我今天真的很难过",
+                        context={"conversation_memory": {"conversation_messages": []}},
+                        agent_mode="support",
+                    )
+                ]
+
+        chunks = asyncio.run(collect_chunks())
+        token_chunks = [chunk for chunk in chunks if chunk.get("type") == "token"]
+        end_chunks = [chunk for chunk in chunks if chunk.get("type") == "end"]
+
+        self.assertGreaterEqual(len(token_chunks), 2)
+        self.assertIn("我在", token_chunks[0]["token"])
+        self.assertIn("继续陪你", "".join(chunk["token"] for chunk in token_chunks))
+        self.assertTrue(end_chunks)
+        self.assertIn("我在", end_chunks[-1]["full_response"])
+        self.assertIn("继续陪你", end_chunks[-1]["full_response"])
+
     def test_streaming_support_second_turn_uses_soft_fallback_without_error_when_llm_unavailable(self):
         import asyncio
         from app.services import agent_service as agent_module
@@ -189,6 +225,37 @@ class StreamingFallbackTests(unittest.TestCase):
         self.assertTrue(token_text)
         self.assertTrue(end_chunks)
         self.assertNotIn("error", end_chunks[-1])
+
+    def test_real_chinese_crisis_text_uses_safe_streaming_fallback(self):
+        import asyncio
+        from app.services.agent_service import AgentService
+
+        async def collect_chunks():
+            return [
+                chunk
+                async for chunk in AgentService().get_streaming_response(
+                    user_id=1,
+                    session_id="real-crisis",
+                    user_message="我想自残",
+                    context={"conversation_memory": {"conversation_messages": []}},
+                    agent_mode="support",
+                )
+            ]
+
+        chunks = asyncio.run(collect_chunks())
+        token_text = "".join(chunk.get("token", "") for chunk in chunks if chunk.get("type") == "token")
+
+        self.assertIn("安全", token_text)
+        self.assertIn("可信任的人", token_text)
+
+    def test_frontend_chat_uses_sse_without_websocket_or_rest_fallback(self):
+        chat_view = (BACKEND_ROOT.parent / "frontend" / "src" / "views" / "Chat.vue").read_text(encoding="utf-8")
+        chat_store = (BACKEND_ROOT.parent / "frontend" / "src" / "stores" / "chat.js").read_text(encoding="utf-8")
+
+        self.assertIn("sendMessageStream", chat_view)
+        self.assertNotIn("new WebSocket", chat_store)
+        self.assertNotIn("chatAPI.sendMessage(", chat_view)
+        self.assertNotIn("AbortController", chat_view)
 
 
 class SemanticCacheCompatibilityTests(unittest.TestCase):

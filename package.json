@@ -1,18 +1,19 @@
 {
-  "name": "MoonCARE",
+  "name": "mooncare",
   "version": "1.0.0",
-  "description": "智能情绪管理平台 - 经期追踪、PMS筛查、AI陪伴",
+  "description": "MoonCARE local development workspace",
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "uvicorn app.main:app --app-dir backend --reload --port 8000",
+    "setup": "node scripts/run_python.js scripts/setup_dev.py",
+    "dev": "node scripts/run_python.js start_mooncare.py",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "node scripts/run_python.js -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
-    "start": "cd frontend && npm run dev",
+    "start": "npm run dev",
     "railway:up": "cd backend && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}",
     "awareness:start": "npx --yes @awareness-sdk/local@latest start"
   },
   "dependencies": {
-    "@awareness-sdk/local": "^0.11.6",
     "concurrently": "^8.2.0"
   },
   "engines": {

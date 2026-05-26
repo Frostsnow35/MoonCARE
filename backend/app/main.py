@@ -27,7 +27,7 @@ from app.models.menstrual import MenstrualRecord
 from app.models.mood import MoodDiary
 from app.models.conversation import Conversation
 from app.models.chat_memory import ChatMemory
-from app.models.music import Music
+from app.models.music import Music, MusicFeedback
 from app.models.assessment import AssessmentObservation, AssessmentSession
 from app.models.auth import EmailVerificationCode
 
@@ -40,8 +40,8 @@ FRONTEND_RESERVED_PATHS = {
     "redoc",
     "openapi.json",
     "healthz",
+    "media",
     "metrics",
-    "music",
 }
 
 
@@ -107,10 +107,11 @@ app = FastAPI(
     ]
 )
 
-# Mount music files directory for local music playback
+# Mount music files directory for local music playback.
+# Keep it away from the Vue /music page route.
 music_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "music")
 os.makedirs(music_dir, exist_ok=True)
-app.mount("/music", StaticFiles(directory=music_dir), name="music")
+app.mount("/media/music", StaticFiles(directory=music_dir), name="music")
 
 if FRONTEND_INDEX_PATH.is_file():
     print(f"Frontend static files available from {FRONTEND_DIST_PATH}")

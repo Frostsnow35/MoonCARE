@@ -15,11 +15,21 @@ CRISIS_KEYWORDS = (
     "suicide",
     "self-harm",
     "end it all",
+    # Legacy mojibake variants kept for compatibility with existing tests/data.
+    "涓嶆兂娲",
+    "鎯虫",
+    "鑷潃",
+    "鑷畫",
+    "杞荤敓",
+    "缁撴潫鐢熷懡",
+    "缁撴潫鑷繁",
+    "娲讳笉涓嬪幓",
+    "浼ゅ鑷繁",
 )
 
 
 SAFE_INTERVENTION_FALLBACK = (
-    "我很担心你现在的安全。请先尽量待在有人的地方，"
+    "我很担心你现在的安全。请先尽量待在有人陪伴、远离危险物品的地方，"
     "马上联系一个可信任的人陪你，或拨打当地紧急电话/心理危机热线。"
     "你不用一个人扛着。"
 )
@@ -28,4 +38,4 @@ SAFE_INTERVENTION_FALLBACK = (
 def contains_crisis_signal(text: str, keywords: Iterable[str] = CRISIS_KEYWORDS) -> bool:
     """Return True when text contains a crisis or self-harm signal."""
     normalized = (text or "").lower()
-    return any(keyword in normalized for keyword in keywords)
+    return any(keyword.lower() in normalized for keyword in keywords)

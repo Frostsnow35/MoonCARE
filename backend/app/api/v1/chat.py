@@ -6,7 +6,7 @@ from typing import Dict, List, AsyncGenerator, Optional
 import json
 import logging
 import uuid
-import jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from datetime import datetime
 
 from app.database import get_db, SessionLocal
@@ -54,7 +54,7 @@ def _decode_websocket_token(token: str) -> Optional[int]:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id = payload.get("sub")
         return int(user_id) if user_id is not None else None
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, TypeError, ValueError):
+    except (ExpiredSignatureError, JWTError, TypeError, ValueError):
         return None
 
 
@@ -580,6 +580,15 @@ async def stream_chat_message(
         client_context=client_context,
     )
 
+    assessment = AssessmentOrchestrator(db)
+    should_record_assessment_answer = assessment.is_awaiting_answer(user_id, session_id)
+    assessment_result = assessment.prepare_turn(
+        user_id=user_id,
+        chat_session_id=session_id,
+        user_message=message,
+        context=context,
+    )
+
     async def event_stream() -> AsyncGenerator[str, None]:
         full_response = ""
         
@@ -607,6 +616,7 @@ async def stream_chat_message(
                 data = {
                     'type': 'token',
                     'token': token,
+                    'phase': chunk.get('phase', 'answer'),
                     'is_final': chunk.get('is_final', False),
                     'first_token_latency_ms': chunk.get('first_token_latency_ms', 0),
                 }
@@ -614,6 +624,8 @@ async def stream_chat_message(
             
             elif chunk_type == "end":
                 final_response = chunk.get("full_response") or full_response
+                if assessment_result.assessment_prompt_hint and not chunk.get("suppress_assessment_prompt"):
+                    final_response = f"{final_response}\n\n{assessment_result.assessment_prompt_hint}"
                 full_response = final_response
 
                 # 保存对话记录
@@ -642,6 +654,14 @@ async def stream_chat_message(
                 db.add(user_conv)
                 db.add(assistant_conv)
                 db.commit()
+                db.refresh(user_conv)
+                if should_record_assessment_answer:
+                    assessment.record_user_answer(
+                        user_id=user_id,
+                        chat_session_id=session_id,
+                        user_message=message,
+                        conversation_id=user_conv.id,
+                    )
                 
                 memory_state = _safe_capture_memory(
                     db=db,
@@ -657,7 +677,10 @@ async def stream_chat_message(
                     'session_id': session_id,
                     'full_response': final_response,
                     'actions': chunk.get('actions', []),
+                    'suggestions': chunk.get('suggestions', []),
                     'elapsed_ms': chunk.get('elapsed_ms', 0),
+                    'reply_status': chunk.get('reply_status', 'ok'),
+                    'assessment_state': assessment_result.assessment_state,
                     'memory_state': memory_state,
                 }
                 # 再生成 SSE 格式的数据

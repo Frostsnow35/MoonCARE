@@ -925,6 +925,7 @@ class AgentService:
                     yield {
                         "type": "token",
                         "token": fast_ack,
+                        "phase": "ack",
                         "is_final": False,
                         "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
                     }
@@ -956,6 +957,7 @@ class AgentService:
             except Exception as exc:
                 print(f"[AgentService] Streaming LLM unavailable, using soft fallback: {exc}")
                 fallback_reply = self._soft_error_fallback(user_message, state)
+                final_response = f"{full_response}{fallback_reply}" if full_response else fallback_reply
                 if not start_sent:
                     yield {
                         "type": "start",
@@ -972,7 +974,8 @@ class AgentService:
                     "type": "end",
                     "actions": self._generate_action_suggestions(state, "support_fallback"),
                     "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
-                    "full_response": fallback_reply,
+                    "full_response": final_response,
+                    "reply_status": "error_fallback",
                 }
                 return
 
@@ -994,6 +997,8 @@ class AgentService:
                     "type": "end",
                     "actions": response.get("actions", []),
                     "elapsed_ms": response.get("elapsed_ms", 0),
+                    "full_response": response.get("message", ""),
+                    "reply_status": response.get("reply_status", "ok"),
                 }
                 return
 
@@ -1052,6 +1057,7 @@ class AgentService:
                 "actions": self._generate_action_suggestions(state),
                 "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                 "full_response": full_response,
+                "reply_status": "ok",
             }
 
         except Exception as e:

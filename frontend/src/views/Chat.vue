@@ -285,18 +285,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { chatAPI, interviewAPI } from '../api'
 import { useChatStore } from '../stores/chat'
 import BottomNav from '../components/BottomNav.vue'
 
 const chatStore = useChatStore()
-const CHAT_REPLY_TIMEOUT_MS = 50000
-const STREAM_FIRST_CHUNK_TIMEOUT_MS = 25000
-const STREAM_OVERALL_TIMEOUT_MS = 90000
 const CLIENT_CONTEXT_TURN_LIMIT = 12
 const CLIENT_CONTEXT_TEXT_LIMIT = 500
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
 
 const messagesContainer = ref(null)
 const inputEl = ref(null)
@@ -305,7 +301,6 @@ const localTyping = ref(false)
 const showModeMenu = ref(false)
 const showMoreMenu = ref(false)
 const lastRetryMessage = ref('')
-const streamingMessageId = ref(null)
 
 const messages = computed(() => chatStore.messages)
 const isTyping = computed(() => chatStore.isAwaitingReply || localTyping.value)
@@ -439,9 +434,8 @@ async function sendMessage(messageOverride = '') {
   } catch (error) {
     console.error('Failed to send message:', error)
     lastRetryMessage.value = text
-    chatStore.lastError = error.message === 'CHAT_REPLY_TIMEOUT'
-      ? '这边等得有点久了。你刚说的内容还在，我们可以继续围着它慢慢来。'
-      : '连接有点不稳。你刚说的内容还在，我们可以继续围着它慢慢来。'
+    chatStore.isConnected = false
+    chatStore.lastError = '连接有点不稳。你刚说的内容还在，我们可以继续围着它慢慢来。'
   } finally {
     localTyping.value = false
     chatStore.isAwaitingReply = false
@@ -449,137 +443,71 @@ async function sendMessage(messageOverride = '') {
 }
 
 async function sendStreamingMessage(text) {
-  const controller = new AbortController()
-  let firstChunkReceived = false
-  const firstChunkTimer = window.setTimeout(() => {
-    if (!firstChunkReceived) controller.abort()
-  }, STREAM_FIRST_CHUNK_TIMEOUT_MS)
-  const overallTimer = window.setTimeout(() => controller.abort(), STREAM_OVERALL_TIMEOUT_MS)
   const clientContext = buildClientContext(text)
+  let fullResponse = ''
+  let messageId = null
 
-  try {
-    const headers = {
-      'Accept': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    }
-    
-    // 添加 Authorization header
-    const token = localStorage.getItem('access_token')
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-
-    const response = await fetch(`${apiBaseUrl}/chat/stream`, {
-      method: 'POST',
-      headers,
-      signal: controller.signal,
-      body: new URLSearchParams({
-        message: text,
-        session_id: chatStore.sessionId || '',
-        agent_mode: chatStore.agentMode,
-        client_context: clientContext,
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    if (!response.body) {
-      throw new Error('STREAM_BODY_UNAVAILABLE')
+  for await (const chunk of chatAPI.sendMessageStream(
+    text,
+    chatStore.sessionId,
+    null,
+    chatStore.agentMode,
+    clientContext
+  )) {
+    if (chunk.type === 'start') {
+      chatStore.sessionId = chunk.session_id
+      chatStore.isConnected = true
+      continue
     }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-    let fullResponse = ''
-    let messageId = null
+    if (chunk.type === 'token') {
+      fullResponse += chunk.token || ''
+      chatStore.lastError = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (!firstChunkReceived) {
-        firstChunkReceived = true
-        window.clearTimeout(firstChunkTimer)
+      if (!messageId) {
+        messageId = chatStore.addAssistantMessage(fullResponse, [], [], {
+          replyPhase: chunk.phase || 'answer'
+        })
+      } else {
+        chatStore.updateMessage(messageId, fullResponse)
       }
+      continue
+    }
 
-      buffer += decoder.decode(value, { stream: true })
-      
-      while (buffer.includes('\n\n')) {
-        const index = buffer.indexOf('\n\n')
-        const chunkStr = buffer.substring(0, index)
-        buffer = buffer.substring(index + 2)
+    if (chunk.type === 'end') {
+      chatStore.sessionId = chunk.session_id
+      const finalResponse = chunk.full_response || fullResponse
 
-        if (chunkStr.startsWith('data: ')) {
-          const dataStr = chunkStr.substring(5)
-          try {
-            const chunk = JSON.parse(dataStr)
-            
-            if (chunk.type === 'start') {
-              chatStore.sessionId = chunk.session_id
-            } else if (chunk.type === 'token') {
-              fullResponse += chunk.token
-              chatStore.lastError = ''
-              
-              if (!messageId) {
-                messageId = chatStore.addAssistantMessage(chunk.token, [], [])
-              } else {
-                chatStore.updateMessage(messageId, fullResponse)
-              }
-            } else if (chunk.type === 'end') {
-              chatStore.sessionId = chunk.session_id
-              
-              if (chunk.full_response && messageId) {
-                chatStore.updateMessage(messageId, chunk.full_response)
-              } else if (chunk.full_response && !messageId) {
-                messageId = chatStore.addAssistantMessage(chunk.full_response, [], [])
-              }
-              
-              if (messageId && chunk.actions && chunk.actions.length > 0) {
-                chatStore.updateMessageActions(messageId, chunk.actions)
-              }
-              
-              if (chunk.memory_state) {
-                chatStore.setMemoryState(chunk.memory_state)
-              }
-            }
-          } catch (e) {
-            console.error('Failed to parse SSE data:', e)
+      if (messageId) {
+        chatStore.updateMessage(messageId, finalResponse)
+        chatStore.updateMessageMetadata(messageId, {
+          suggestions: chunk.suggestions || [],
+          actions: chunk.actions || [],
+          replyStatus: chunk.reply_status || 'ok',
+          elapsedMs: chunk.elapsed_ms || 0
+        })
+      } else if (finalResponse) {
+        messageId = chatStore.addAssistantMessage(
+          finalResponse,
+          chunk.suggestions || [],
+          chunk.actions || [],
+          {
+            replyStatus: chunk.reply_status || 'ok',
+            elapsedMs: chunk.elapsed_ms || 0
           }
-        }
+        )
       }
-    }
 
-  } catch (error) {
-    console.error('Streaming error:', error)
-    
-    try {
-      const result = await withTimeout(
-        chatAPI.sendMessage(
-          text,
-          chatStore.sessionId,
-          null,
-          chatStore.agentMode,
-          clientContext
-        ),
-        CHAT_REPLY_TIMEOUT_MS
-      )
-      
-      chatStore.sessionId = result.session_id
-      if (Object.prototype.hasOwnProperty.call(result, 'memory_state')) {
-        chatStore.setMemoryState(result.memory_state)
+      if (Object.prototype.hasOwnProperty.call(chunk, 'assessment_state')) {
+        chatStore.setAssessmentState(chunk.assessment_state)
       }
-      if (result.reply_status === 'timeout_fallback') {
+      if (Object.prototype.hasOwnProperty.call(chunk, 'memory_state')) {
+        chatStore.setMemoryState(chunk.memory_state)
+      }
+      if (chunk.reply_status && chunk.reply_status !== 'ok') {
         lastRetryMessage.value = text
       }
-      chatStore.addAssistantMessage(result.reply, result.suggestions || [], result.actions || [])
-    } catch (fallbackError) {
-      console.error('Fallback error:', fallbackError)
-      chatStore.addAssistantMessage('我还在这里。你刚说的内容不会被丢掉，我们可以继续慢慢来。', [], [])
     }
-  } finally {
-    window.clearTimeout(firstChunkTimer)
-    window.clearTimeout(overallTimer)
   }
 }
 
@@ -650,16 +578,6 @@ function retryLastMessage() {
   sendMessage(retryText)
 }
 
-function withTimeout(promise, timeoutMs) {
-  let timerId
-  const timeoutPromise = new Promise((_, reject) => {
-    timerId = window.setTimeout(() => reject(new Error('CHAT_REPLY_TIMEOUT')), timeoutMs)
-  })
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    window.clearTimeout(timerId)
-  })
-}
-
 function scrollToBottom() {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
@@ -707,11 +625,6 @@ watch(showSessionList, (newVal) => {
   }
 })
 
-onUnmounted(() => {
-  if (!chatStore.isInterviewMode) {
-    chatStore.disconnect()
-  }
-})
 </script>
 
 <style scoped>

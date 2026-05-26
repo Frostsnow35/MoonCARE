@@ -3,25 +3,27 @@ from app.utils.safety import contains_crisis_signal
 
 class PerceptionAgent:
     def analyze(self, message: str, cycle_phase: str = None, sensor_data: dict = None) -> dict:
+        """Analyze the user turn before any routing or model call."""
         sensor_data = sensor_data or {}
         text = (message or "").lower()
 
         risk_level = "low"
-
         high_keywords = [
-            "没有意义", "撑不住了", "想消失", "我真的不行了", "崩溃到不行"
+            "没有意义", "撑不住了", "想消失", "我真的不行了", "崩溃到不行",
+            "娌℃湁鎰忎箟", "鎾戜笉浣忎簡", "鎯虫秷澶", "鎴戠湡鐨勪笉琛屼簡", "宕╂簝鍒颁笉琛",
         ]
         medium_keywords = [
-            "烦躁", "难受", "想哭", "崩溃", "焦虑", "累", "低落", "敏感"
+            "烦躁", "难受", "难过", "想哭", "崩溃", "焦虑", "紧张", "低落", "敏感", "委屈", "心里堵",
+            "鐑﹁簛", "闅惧彈", "鎯冲摥", "宕╂簝", "鐒﹁檻", "绱", "浣庤惤", "鏁忔劅",
         ]
 
         support_context = self._extract_support_context(text, cycle_phase)
 
         if contains_crisis_signal(text):
             risk_level = "crisis"
-        elif any(kw in text for kw in high_keywords):
+        elif any(keyword in text for keyword in high_keywords):
             risk_level = "high"
-        elif any(kw in text for kw in medium_keywords):
+        elif any(keyword in text for keyword in medium_keywords):
             risk_level = "medium"
 
         return {
@@ -33,26 +35,33 @@ class PerceptionAgent:
         }
 
     def _extract_support_context(self, text: str, cycle_phase: str = None) -> dict:
-        """Extract lightweight menstrual/body-emotion signals for support tone."""
+        """Extract lightweight menstrual, body, and emotion signals for support tone."""
         body_signal_keywords = {
-            "pain": ["肚子痛", "腹痛", "痛经", "绞痛", "疼", "痛", "腰酸", "头痛"],
-            "bloating": ["腹胀", "胀", "水肿", "乳房胀痛"],
-            "fatigue": ["累", "疲惫", "乏力", "没精神", "困"],
-            "sleep_change": ["睡不好", "失眠", "睡不着", "嗜睡"],
-            "appetite": ["想吃", "没胃口", "暴食", "食欲"],
+            "pain": [
+                "肚子疼", "肚子痛", "腹痛", "小腹痛", "痛经", "绞痛", "疼", "痛", "腰酸", "头痛",
+                "鑲氬瓙鐥", "鑵圭棝", "鐥涚粡", "缁炵棝", "鐤", "鐥", "鑵伴吀", "澶寸棝",
+            ],
+            "bloating": ["腹胀", "胀", "水肿", "乳房胀", "鑵硅儉", "鑳", "姘磋偪", "涔虫埧鑳"],
+            "fatigue": ["累", "疲惫", "乏力", "没精神", "困", "绱", "鐤叉儷", "涔忓姏", "娌＄簿绁", "鍥"],
+            "sleep_change": ["睡不好", "失眠", "睡不着", "嗜睡", "鐫′笉濂", "澶辩湢", "鐫′笉鐫", "鍡滅潯"],
+            "appetite": ["想吃", "没胃口", "暴食", "食欲", "鎯冲悆", "娌¤儍鍙", "鏆撮", "椋熸"],
         }
         emotion_signal_keywords = {
-            "sad": ["难过", "低落", "伤心", "沮丧"],
-            "tearful": ["想哭", "容易哭", "委屈", "敏感"],
-            "irritable": ["烦躁", "易怒", "火大", "生气"],
-            "anxious": ["焦虑", "紧张", "慌", "不安", "担心"],
-            "helpless": ["无助", "撑不住", "不知道怎么办"],
+            "sad": ["难过", "低落", "伤心", "沮丧", "闅捐繃", "浣庤惤", "浼ゅ績", "娌抚"],
+            "tearful": ["想哭", "容易哭", "委屈", "敏感", "鎯冲摥", "瀹规槗鍝", "濮斿眻", "鏁忔劅"],
+            "irritable": ["烦躁", "易怒", "火大", "生气", "鐑﹁簛", "鏄撴", "鐏ぇ", "鐢熸皵"],
+            "anxious": ["焦虑", "紧张", "慌", "不安", "担心", "鐒﹁檻", "绱у紶", "鎱", "涓嶅畨", "鎷呭績"],
+            "helpless": ["无助", "撑不住", "不知道怎么办", "鏃犲姪", "鎾戜笉浣", "涓嶇煡閬撴"],
         }
         menstrual_keywords = [
-            "经前", "月经前", "姨妈前", "经期", "月经", "例假", "姨妈", "来大姨妈",
-            "黄体期", "pms", "pmdd",
+            "经前", "月经前", "姨妈前", "经期", "月经", "例假", "姨妈", "来大姨妈", "黄体期",
+            "pms", "pmdd", "缁忓墠", "鏈堢粡鍓", "濮ㄥ鍓", "缁忔湡", "鏈堢粡", "渚嬪亣",
+            "濮ㄥ", "鏉ュぇ濮ㄥ", "榛勪綋鏈",
         ]
-        menstrual_phases = {"经前期", "黄体期", "luteal", "menstrual", "经期", "月经期"}
+        menstrual_phases = {
+            "经前期", "黄体期", "经期", "月经期", "luteal", "menstrual",
+            "缁忓墠鏈", "榛勪綋鏈", "缁忔湡", "鏈堢粡鏈",
+        }
 
         body_signals = self._matched_signal_names(text, body_signal_keywords)
         emotion_signals = self._matched_signal_names(text, emotion_signal_keywords)

@@ -1,156 +1,109 @@
-# MoonCARE 本地开发环境设置指南
+# MoonCARE Setup Guide
 
-## 前置要求
+> Change date: 2026-05-26  
+> Impact scope: local collaborator setup, dependency installation, and development startup  
+> Status: completed for local setup; production deployment still needs server-specific verification
 
-确保你的电脑已安装：
-- **Node.js** (v16 或更高) - https://nodejs.org/
-- **Python** (3.10 或更高) - https://www.python.org/downloads/
+## 1. Goal
 
-## 快速开始
+Make a fresh checkout start with one setup command and one dev command:
 
-### 1. 克隆项目
 ```bash
-git clone <你的仓库地址>
-cd MoonCARE
-```
-
-### 2. 一键启动（推荐）
-
-Windows 用户：
-```bash
-python start_mooncare.py
-```
-
-macOS / Linux 用户：
-```bash
-python3 start_mooncare.py
-```
-
-启动脚本会自动：
-- 检查环境
-- 启动 Awareness 记忆服务
-- 启动后端 API 服务
-- 启动前端开发服务器
-
-### 3. 访问应用
-
-打开浏览器访问：
-- **前端界面**: http://localhost:3000
-- **后端 API 文档**: http://localhost:8000/docs
-- **Awareness 记忆服务**: http://localhost:37800
-
-## 手动启动（如需要）
-
-如果一键启动失败，可以按以下步骤手动启动：
-
-### 安装依赖
-
-**前端依赖：**
-```bash
-cd frontend
-npm install
-cd ..
-```
-
-**后端依赖：**
-```bash
-cd backend
-pip install -r requirements.txt
-cd ..
-```
-
-### 启动服务
-
-**1. 启动 Awareness 记忆服务（可选但推荐）**
-```bash
-npx --yes @awareness-sdk/local@latest start
-```
-
-**2. 启动后端服务（新终端）**
-```bash
-cd backend
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**3. 启动前端服务（新终端）**
-```bash
-cd frontend
+npm run setup
 npm run dev
 ```
 
-## 项目结构说明
+This keeps MoonCARE on the current backend `FastAPI + SQLAlchemy` and frontend `Vue 3 + Pinia + Vite` architecture. It does not change the AI safety routing layer.
 
-```
-MoonCARE/
-├── frontend/          # Vue 3 前端项目
-│   ├── src/
-│   │   ├── views/    # 页面组件
-│   │   ├── components/ # 可复用组件
-│   │   └── stores/   # Pinia 状态管理
-│   └── package.json
-├── backend/          # FastAPI 后端项目
-│   ├── app/
-│   │   ├── api/     # API 路由
-│   │   ├── models/  # 数据模型
-│   │   └── services/ # 业务逻辑
-│   └── requirements.txt
-├── .awareness/       # Awareness 记忆数据（自动生成）
-└── start_mooncare.py # 一键启动脚本
-```
+## 2. Prerequisites
 
-## 常用开发命令
+| Dependency | Version | Notes |
+| --- | --- | --- |
+| Python | 3.10+ | Used for FastAPI and the setup launcher |
+| Node.js | 20+ | Used for root scripts and Vite |
+| npm | 10+ | Installed with Node.js |
 
-### 前端
+## 3. First-Time Setup
+
+Run from the repository root:
+
 ```bash
-cd frontend
-npm run dev      # 启动开发服务器
-npm run build    # 构建生产版本
-npm run preview  # 预览构建结果
+npm run setup
 ```
 
-### 后端
+The setup script performs:
+
+| Step | Status | Output |
+| --- | --- | --- |
+| Copy env examples | Completed | Creates `.env`, `backend/.env`, `frontend/.env` only when missing |
+| Install backend dependencies | Completed | Uses `backend/requirements.txt` |
+| Install root npm dependencies | Completed | Uses root `package.json` |
+| Install frontend dependencies | Completed | Uses `frontend/package.json` |
+
+## 4. Start Development Servers
+
+Run from the repository root:
+
 ```bash
-cd backend
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload  # 开发模式（自动重载）
+npm run dev
 ```
 
-## 环境变量配置
+The launcher starts:
 
-如需配置环境变量，在 `backend/` 目录创建 `.env` 文件（参考 `.env.railway`）：
+| Service | URL | Log |
+| --- | --- | --- |
+| Backend | `http://localhost:8000` | `logs/backend-dev.log` |
+| Frontend | `http://localhost:3000` | `logs/frontend-dev.log` |
 
-```env
-# 后端配置
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+Stop both services with `Ctrl+C`.
 
-# Awareness 记忆服务
-AWARENESS_MEMORY_ENABLED=true
-AWARENESS_BASE_URL=http://localhost:37800
+## 5. Optional AI Runtime Dependencies
+
+Default setup intentionally excludes heavyweight local inference packages. They are not required for a collaborator to start the app and verify the core UI/API.
+
+Install only when needed:
+
+```bash
+python -m pip install -r backend/requirements-optional-ai.txt
 ```
 
-## 开发注意事项
+| Package | Status | Reason |
+| --- | --- | --- |
+| `sentence-transformers` | Optional | Local embedding model support |
+| `vllm` | Optional, skipped on Windows | Local GPU inference server; OS/GPU-specific |
 
-1. **数据库文件**: SQLite 数据库文件会在首次运行时自动创建，已在 `.gitignore` 中忽略
-2. **端口占用**: 确保 3000、8000、37800 端口未被占用
-3. **Awareness 服务**: 可选但推荐，如无法启动，系统会自动回退到数据库存储
-4. **代码提交**: 提交前确保所有功能正常，不要提交 `.env`、数据库文件等敏感数据
+Remote OpenAI-compatible providers remain configured through environment variables.
 
-## 常见问题
+## 6. Common Checks
 
-**Q: npm install 很慢？**
-A: 使用国内镜像：`npm install --registry=https://registry.npmmirror.com`
+```bash
+python -m compileall backend
+npm run build
+```
 
-**Q: pip install 很慢？**
-A: 使用国内镜像：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+If `python` is not available on Windows, use the repository wrapper:
 
-**Q: 端口被占用？**
-A: 可以修改启动端口，或关闭占用端口的进程
+```bash
+node scripts/run_python.js -m compileall backend
+```
 
-**Q: Awareness 服务启动失败？**
-A: 不影响使用，系统会自动使用本地数据库，只是缺少长期记忆功能
+## 7. Safety and Configuration Notes
 
-## 获取帮助
+| Topic | Requirement |
+| --- | --- |
+| Crisis handling | Do not bypass `PerceptionAgent`, `Router`, or intervention fallback |
+| Medical wording | AI output must stay reference-only and must not diagnose |
+| Secrets | Never commit `.env`, API keys, JWT secrets, or database passwords |
+| Logs | Do not log full sensitive chat, token, LLM key, or health privacy data |
+| Production | Recheck CORS, `SECRET_KEY`, database URL, reverse proxy, WebSocket upgrade, and HTTPS |
 
-- API 文档：http://localhost:8000/docs
-- 提交 Issue：在 GitHub 仓库中提问题
+## 8. Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `Missing command: npm` | Install Node.js 20+ and reopen the terminal |
+| `Python 3.10+ is required` | Install Python 3.10+ and ensure it is on `PATH` |
+| `Root dependencies are missing` | Run `npm run setup` |
+| `Frontend dependencies are missing` | Run `npm run setup` |
+| Backend exits immediately | Check `logs/backend-dev.log` |
+| Frontend exits immediately | Check `logs/frontend-dev.log` |

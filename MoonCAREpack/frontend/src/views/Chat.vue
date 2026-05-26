@@ -515,7 +515,16 @@ async function sendStreamingMessage(text) {
           try {
             const chunk = JSON.parse(dataStr)
             
-            if (chunk.type === 'start') {
+            if (chunk.type === 'direct_reply') {
+              // 立即显示确定性回复
+              chatStore.sessionId = chunk.session_id
+              chatStore.addAssistantMessage(chunk.message, chunk.suggestions || [], chunk.actions || [])
+              // 如果需要 LLM followup，重置 messageId 让后续创建新消息
+              if (chunk.needs_llm_followup) {
+                messageId = null
+                fullResponse = ''
+              }
+            } else if (chunk.type === 'start') {
               chatStore.sessionId = chunk.session_id
             } else if (chunk.type === 'token') {
               fullResponse += chunk.token
