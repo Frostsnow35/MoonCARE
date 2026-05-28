@@ -179,12 +179,46 @@ class ResponseQualityGuard:
             seen.add(normalized)
             kept.append(sentence)
 
-        return "".join(kept).strip()
+        result = "".join(kept).strip()
+
+        max_iterations = 5
+        for _ in range(max_iterations):
+            deduped = self._remove_adjacent_duplicates(result)
+            if deduped == result:
+                break
+            result = deduped
+
+        return result
+
+    def _remove_adjacent_duplicates(self, text: str) -> str:
+        """Remove adjacent duplicate sentences that may appear due to LLM repetition."""
+        if not text:
+            return text
+
+        sentences = re.findall(r"[^。！？!?]+[。！？!?]?", text)
+        if len(sentences) <= 1:
+            return text
+
+        result = []
+        prev_sentence = ""
+        for sentence in sentences:
+            normalized = re.sub(r"\s+", "", sentence).strip("。！？!?")
+            prev_normalized = re.sub(r"\s+", "", prev_sentence).strip("。！？!?")
+            if normalized == prev_normalized and normalized:
+                continue
+            result.append(sentence)
+            prev_sentence = sentence
+
+        return "".join(result).strip()
 
     def _is_open_disclosure(self, message: str) -> bool:
         """Return whether the user is only opening a space to talk."""
         compact = "".join(message.split())
-        return len(compact) <= 12 and any(marker in compact for marker in self.open_disclosure_markers)
+        # 严格匹配：消息很短（<=12字）且包含明确的倾诉意图标记
+        if len(compact) > 12:
+            return False
+        # 必须包含明确的开放披露标记，而不是任意短消息
+        return any(marker in compact for marker in self.open_disclosure_markers)
 
     def _overreads_open_disclosure(self, reply: str) -> bool:
         """Return whether the reply invents strong emotions not present in the user text."""
@@ -455,35 +489,31 @@ class ResponseQualityGuard:
         if self._is_ambiguous_distress(message):
             return (
                 "我听进去了。有时候说不上来具体是哪种不舒服，但它就是实实在在地杵在那里。"
-                "不赶时间，也不急着给它贴标签——你可以先在这儿安静地待一会儿。"
-                "等你想开口的时候，哪怕只说一个词，我也会好好地接住 🌷"
+                "不赶时间，也不急着给它贴标签——你可以先在这儿安静地待一会儿 🌷"
             )
 
         emotion_openings = {
             "烦躁": (
                 "我听到了。烦躁就像胸口有一团小火苗，窜来窜去，想抓又抓不住。"
-                "你不用一个人消化它——试试告诉我：这股烦躁更像是被什么点燃的？是某件事、某个人，还是身体里就是有股火？"
+                "不用急着消化它，先让它在这儿待一会儿。"
             ),
             "焦虑": (
                 "我听到了。焦虑有时候不是「脑子里在想什么」，而是身体先紧张起来——"
-                "心跳快一点、胸口闷一点、静不下来。"
-                "你可以试着告诉我，刚才是什么让你感到不安？不用讲清楚逻辑，讲感觉就行。"
+                "心跳快一点、胸口闷一点、静不下来。先深呼吸几下，不用急着理清。"
             ),
             "委屈": (
                 "我听到了。委屈是那种明明很难受、想哭，但又怕别人觉得「不至于吧」的感觉。"
-                "你没有小题大做——不被理解本身，就已经足够让人难过了。"
-                "你愿意跟我多说一点吗？最让你觉得委屈的是哪一刻？"
+                "你没有小题大做——不被理解本身，就已经足够让人难过了 🫂"
             ),
             "低落": (
                 "我听到了。低落不像暴风雨那么猛烈，更像是心里蒙了一层灰蒙蒙的雾，做什么都提不起劲。"
                 "不用急着「好起来」——这份感觉可以先放在这儿。"
-                "如果愿意的话，试着告诉我：这份低落更像是一种什么样的累？是身体的、心里的、还是说不上来？"
             ),
         }
 
         opening = emotion_openings.get(emotion, (
             f"我听到了，这份{emotion}它真真实实地存在——不是「想太多」，也不是「没什么大不了」。"
-            "你可以试着告诉我，是什么在压着你？哪怕只是一个词，或者一件事都行。"
+            "先让它在这儿待一会儿，不用急着赶走它。"
         ))
 
         cycle_note = self._cycle_note(state, message)
@@ -496,10 +526,10 @@ class ResponseQualityGuard:
         cycle_phase = state.get("cycle_phase", "")
         cycle_note = ""
         if cycle_phase in {"经前期", "经期", "黄体期", "月经期"}:
-            cycle_note = "如果这几天正好和经前/经期叠在一起，身体和情绪可能会更敏感一些，我们可以把它当作一个参考记下来，不做诊断。"
+            cycle_note = "这几天身体和情绪可能比较敏感，不用急着整理清楚。"
         return (
-            "我在呢。不着急，也不用把一切整理得明明白白——有时候最真实的东西，就是那些还没成形的话。"
-            f"你可以从今天最想被听见的那一句开始，哪怕只是「好累」或者「不知道怎么说」都可以。{cycle_note}"
+            f"我在呢。{cycle_note}"
+            "想说什么都可以，我听着。"
         ).rstrip()
 
     def _is_partner_invalidation(self, message: str) -> bool:

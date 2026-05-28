@@ -18,6 +18,7 @@ from app.utils.safety import SAFE_INTERVENTION_FALLBACK
 logger = logging.getLogger(__name__)
 
 SUPPORT_HANDOFF_FALLBACK = "我在。你可以继续说，我会先跟着你现在最明显的感受。"
+ACTION_SUPPORT_HANDOFF_FALLBACK = "我先陪你把眼前这一步理一下。先别急着继续往前冲，我们把现在最小的一步找出来。"
 LIGHT_COMFORT_FALLBACK = "好的，那我们不做了。允许自己在这几分钟里摆烂和发呆。我可以就这么陪你安静地待一会。你想吐槽什么，我都在听。"
 KNOWLEDGE_FALLBACK_REPLY = (
     "这个问题我先给一个谨慎答复：经前/经期情绪突然变化，可能和激素水平变化、睡眠、疼痛、压力"
@@ -103,7 +104,23 @@ class Router:
         health_context_markers = (
             "经前", "经期", "月经", "姨妈", "PMS", "pms", "PMDD", "pmdd", "激素", "周期",
             "情绪", "烦躁", "失眠", "焦虑", "抑郁", "难过", "易怒", "头痛", "腹痛", "疲劳", "乳房", "水肿",
-            "运动", "饮食", "睡眠", "休息"
+            "运动", "饮食", "睡眠", "休息", "胸痛", "腰酸", "腰痛", "想吐", "恶心", "头晕", "心慌",
+            "心悸", "出汗", "潮热", "盗汗", "抽筋", "痉挛", "腹胀", "便秘", "腹泻", "尿频", "尿急",
+            "乳房胀痛", "胸胀", "乳痛", "小腹", "肚子", "痛经", "量多", "量少", "推迟", "提前",
+            "不来", "停经", "闭经", "淋漓", "血块", "发黑", "褐色", "鲜红", "暗红",
+            "脾气", "易怒", "暴躁", "想哭", "低落", "压抑", "紧张", "不安", "敏感", "多疑",
+            "记忆力", "注意力", "专注力", "困", "乏力", "没精神", "疲惫", "累", "嗜睡",
+            "想吃", "食欲", "暴食", "胃口", "体重", "发胖", "水肿", "浮肿"
+        )
+        
+        # 生理/心理现象关键词（专门用于"为什么"模式识别）
+        phenomenon_markers = (
+            "情绪", "烦躁", "失眠", "焦虑", "抑郁", "难过", "易怒", "头痛", "腹痛", "疲劳", "乳房",
+            "胸痛", "腰酸", "腰痛", "想吐", "恶心", "头晕", "心慌", "心悸", "出汗", "潮热", "盗汗",
+            "抽筋", "痉挛", "腹胀", "便秘", "腹泻", "尿频", "尿急", "乳房胀痛", "胸胀", "乳痛",
+            "小腹", "肚子", "痛经", "脾气", "暴躁", "想哭", "低落", "压抑", "紧张", "不安", "敏感",
+            "多疑", "记忆力", "注意力", "专注力", "困", "乏力", "没精神", "疲惫", "累", "嗜睡",
+            "想吃", "食欲", "暴食", "胃口", "体重", "发胖", "水肿", "浮肿"
         )
         
         # 特定模式识别：识别"怎么缓解X"、"如何改善X"等常见求助模式
@@ -115,22 +132,32 @@ class Router:
         has_health_context = any(marker in compact for marker in health_context_markers)
         has_question_mark = "？" in compact or "?" in compact
         
-        # 组合逻辑：基础模式 或 特定求助模式（即使没有严格的疑问词+主题词组合）
-        basic_match = has_question and (has_health_context or has_question_mark)
+        # 特殊情况1："为什么"+生理/心理现象关键词组合（即使没有经期相关词，也应该识别为知识问题）
+        if "为什么" in compact and any(marker in compact for marker in phenomenon_markers):
+            return True
         
-        # 特殊情况："PMS是什么"应该识别为知识问题
+        # 特殊情况2："正常吗"等模式识别，只要有健康上下文或长度较短就识别
+        normal_patterns = ("正常吗", "正常嘛", "正常么")
+        if any(pattern in compact for pattern in normal_patterns):
+            if has_health_context or len(compact) <= 10:
+                return True
+        
+        # 特殊情况3："PMS是什么"应该识别为知识问题
         if "是什么" in compact and ("PMS" in compact or "pmdd" in compact.lower()):
             return True
         
-        # 特殊情况：单独的健康疑问（如"这正常吗"）
+        # 特殊情况4：单独的健康疑问（如"这正常吗"）
         standalone_health_questions = ("正常吗", "可以吗", "能吗")
         for q in standalone_health_questions:
-            if q in compact and len(compact) <= 6:
+            if q in compact and len(compact) <= 8:
                 return True
         
-        # 特殊情况：健康主题词+疑问词组合（如"经期可以运动吗"）
+        # 特殊情况5：健康主题词+疑问词组合（如"经期可以运动吗"）
         if has_health_context and has_question:
             return True
+        
+        # 组合逻辑：基础模式 或 特定求助模式（即使没有严格的疑问词+主题词组合）
+        basic_match = has_question and (has_health_context or has_question_mark)
         
         return basic_match or has_specific_pattern
 
@@ -154,6 +181,16 @@ class Router:
         
         return any(marker in compact for marker in negative_feedback_markers)
 
+    def _looks_like_action_request(self, message: str) -> bool:
+        """Return whether the user is explicitly asking for immediate next steps."""
+        compact = "".join((message or "").split())
+        markers = (
+            "我该怎么做", "该怎么做", "怎么办", "怎么做", "怎么处理",
+            "接下来怎么做", "接下来怎么办", "现在怎么办", "现在怎么做",
+            "能做什么", "可以做什么", "帮我想办法", "给我点建议", "怎么面对", "怎么回复",
+        )
+        return any(marker in compact for marker in markers)
+
     def _run_knowledge(self, message: str, state: Dict[str, Any]) -> Tuple[str, str]:
         """Run the knowledge agent or return a cautious knowledge fallback."""
         if self.knowledge is None:
@@ -164,14 +201,25 @@ class Router:
             logger.exception("[Router] KnowledgeAgent error: %s", exc)
             return self._knowledge_fallback(message), "knowledge_fallback"
 
-    def _run_support(self, message: str, state: Dict[str, Any]) -> Tuple[str, str]:
+    def _run_support(
+        self,
+        message: str,
+        state: Dict[str, Any],
+        support_intent: str = "support",
+    ) -> Tuple[str, str]:
         """Run the support agent or return a brief human handoff copy."""
+        support_state = dict(state or {})
+        support_state["support_intent"] = support_intent
         if self.support is None:
+            if support_intent == "action_support":
+                return ACTION_SUPPORT_HANDOFF_FALLBACK, "action_support_fallback"
             return SUPPORT_HANDOFF_FALLBACK, "support_fallback"
         try:
-            return self.support.respond(message, state), "support"
+            return self.support.respond(message, support_state), support_intent
         except Exception as exc:
             logger.exception("[Router] SupportAgent error: %s", exc)
+            if support_intent == "action_support":
+                return ACTION_SUPPORT_HANDOFF_FALLBACK, "action_support_fallback"
             return SUPPORT_HANDOFF_FALLBACK, "support_fallback"
 
     def route(self, message: str, state: Dict[str, Any], agent_mode: str = "auto") -> Tuple[str, str]:
@@ -198,9 +246,13 @@ class Router:
             return self._run_knowledge(message, state)
 
         if agent_mode == "support":
-            return self._run_support(message, state)
+            support_intent = "action_support" if self._looks_like_action_request(message) else "support"
+            return self._run_support(message, state, support_intent=support_intent)
 
         if self._looks_like_knowledge_question(message):
             return self._run_knowledge(message, state)
 
-        return self._run_support(message, state)
+        if self._looks_like_action_request(message):
+            return self._run_support(message, state, support_intent="action_support")
+
+        return self._run_support(message, state, support_intent="support")

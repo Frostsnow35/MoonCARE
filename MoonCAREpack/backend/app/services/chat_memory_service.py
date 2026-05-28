@@ -27,7 +27,7 @@ class ChatMemoryService:
     """Create and retrieve bounded chat memories for prompt context."""
 
     max_value_length = 120
-    max_recent_turn_length = 160
+    max_recent_turn_length = 300
 
     def __init__(self, db: Session):
         self.db = db
@@ -37,7 +37,7 @@ class ChatMemoryService:
         user_id: int,
         session_id: str,
         query_message: str = "",
-        recent_turn_limit: int = 8,
+        recent_turn_limit: int = 24,
         memory_limit: int = 12,
         retrieval_limit: int = 4,
     ) -> Dict[str, Any]:

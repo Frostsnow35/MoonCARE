@@ -73,11 +73,11 @@ class Settings(BaseSettings):
     ZAI_MODEL_NAME: str = "glm-5.1"
 
     # Chat latency controls. Keep the model and prompts unchanged, but bound user wait time.
-    LLM_REQUEST_TIMEOUT_SECONDS: float = 45.0
-    LLM_CONNECT_TIMEOUT_SECONDS: float = 10.0
-    LLM_WRITE_TIMEOUT_SECONDS: float = 20.0
-    LLM_POOL_TIMEOUT_SECONDS: float = 10.0
-    CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 45.0
+    LLM_REQUEST_TIMEOUT_SECONDS: float = 12.0
+    LLM_CONNECT_TIMEOUT_SECONDS: float = 3.0
+    LLM_WRITE_TIMEOUT_SECONDS: float = 8.0
+    LLM_POOL_TIMEOUT_SECONDS: float = 2.0
+    CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 12.0
     LLM_MAX_RETRIES: int = 0
     LLM_TRUST_ENV_PROXY: bool = False
 
@@ -92,6 +92,7 @@ class Settings(BaseSettings):
 
     NLP_CONFIDENCE_THRESHOLD: float = 0.6
     CONTEXT_WINDOW_SIZE: int = 10
+    CONVERSATION_COMPACTION_USE_TIKTOKEN: bool = False
 
     # Redis configuration for semantic caching
     REDIS_URL: str = "redis://localhost:6379"
@@ -100,14 +101,18 @@ class Settings(BaseSettings):
     REDIS_SOCKET_TIMEOUT: float = 0.5
 
     # Semantic cache configuration
-    SEMANTIC_CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_ENABLED: bool = False
     SEMANTIC_CACHE_TTL_HOURS: int = 24
     SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.85
     SEMANTIC_CACHE_MAX_RESULTS: int = 3
+    SEMANTIC_CACHE_MAX_SIZE: int = 1000
+    SEMANTIC_CACHE_WARMUP_ENABLED: bool = False
+    SEMANTIC_CACHE_WARMUP_ITEMS: int = 3
+    SEMANTIC_CACHE_NAMESPACE: str = "chat-agent-v1"
 
     # Awareness Local product memory. This is intended for local development
     # and demos; production needs a separate multi-user isolation review.
-    AWARENESS_MEMORY_ENABLED: bool = True
+    AWARENESS_MEMORY_ENABLED: bool = False
     AWARENESS_BASE_URL: str = "http://localhost:37800"
     AWARENESS_MCP_PATH: str = "/mcp"
     AWARENESS_TIMEOUT_SECONDS: float = 3.0
@@ -128,12 +133,14 @@ class Settings(BaseSettings):
     # Streaming configuration
     STREAMING_ENABLED: bool = True
     STREAMING_CHUNK_SIZE: int = 1024
-    FIRST_TOKEN_TIMEOUT_SECONDS: float = 20.0
+    FIRST_TOKEN_TIMEOUT_SECONDS: float = 3.0
 
     # Conversation compaction configuration
     MAX_PROMPT_TOKENS: int = 4096
     SYSTEM_PROMPT_TOKENS: int = 1024
     MAX_RESPONSE_TOKENS: int = 512
+    CHAT_CONTEXT_RECENT_TURNS: int = 20
+    CHAT_CONTEXT_MAX_TURNS: int = 30
 
     class Config:
         env_file = ".env"

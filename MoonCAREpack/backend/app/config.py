@@ -8,8 +8,11 @@ from pydantic_settings import BaseSettings
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = BACKEND_ROOT.parent
 
-load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(BACKEND_ROOT / ".env", override=True)
+# Env precedence:
+# - backend/.env provides local-development defaults
+# - project-root .env is the source of truth (e.g., shared model config)
+load_dotenv(BACKEND_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 
 class Settings(BaseSettings):
@@ -73,12 +76,12 @@ class Settings(BaseSettings):
     ZAI_MODEL_NAME: str = "glm-5.1"
 
     # Chat latency controls. Keep the model and prompts unchanged, but bound user wait time.
-    LLM_REQUEST_TIMEOUT_SECONDS: float = 45.0
-    LLM_CONNECT_TIMEOUT_SECONDS: float = 10.0
-    LLM_WRITE_TIMEOUT_SECONDS: float = 20.0
-    LLM_POOL_TIMEOUT_SECONDS: float = 10.0
-    CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 45.0
-    LLM_MAX_RETRIES: int = 0
+    LLM_REQUEST_TIMEOUT_SECONDS: float = 120.0
+    LLM_CONNECT_TIMEOUT_SECONDS: float = 30.0
+    LLM_WRITE_TIMEOUT_SECONDS: float = 60.0
+    LLM_POOL_TIMEOUT_SECONDS: float = 30.0
+    CHAT_AGENT_REPLY_TIMEOUT_SECONDS: float = 120.0
+    LLM_MAX_RETRIES: int = 2
     LLM_TRUST_ENV_PROXY: bool = False
 
     SQLITE_JOURNAL_MODE: str = "TRUNCATE"

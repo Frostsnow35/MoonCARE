@@ -13,7 +13,7 @@
                 <path d="M17 25c1.8 1.2 4.2 1.2 6 0" stroke="#4B3A46" stroke-width="1.8" stroke-linecap="round" />
               </svg>
             </div>
-            <div class="min-w-0">
+            <div v-if="chatStore.agentMode !== 'auto'" class="min-w-0">
               <h1 class="text-lg font-bold text-gray-800 leading-tight">{{ chatStore.activeAgent.label }}</h1>
               <p class="text-xs text-gray-500 truncate">{{ chatStore.activeAgent.helper }}</p>
               <p v-if="memoryStatusText" class="text-[11px] text-pink-500 truncate">{{ memoryStatusText }}</p>
@@ -77,12 +77,22 @@
             :key="msg.id"
             class="flex animate-fadeIn"
             :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+            @contextmenu.prevent="showMessageMenu($event, msg)"
           >
             <div
               class="message-bubble"
               :class="msg.role === 'user' ? 'message-user' : 'message-agent'"
+              @click.right.prevent="showMessageMenu($event, msg)"
             >
-              <p class="text-sm leading-relaxed whitespace-pre-wrap break-words">{{ msg.content }}</p>
+              <p
+                v-if="!shouldRenderMarkdown(msg)"
+                class="text-sm leading-relaxed whitespace-pre-wrap break-words"
+              >{{ msg.content }}</p>
+              <div
+                v-else
+                class="text-sm leading-relaxed break-words markdown-content"
+                v-html="renderMarkdown(msg.content)"
+              ></div>
 
               <div
                 v-if="msg.role === 'assistant' && msg.suggestions && msg.suggestions.length > 0"
@@ -186,14 +196,14 @@
               class="mode-current"
               @click="toggleModeMenu"
             >
-              {{ chatStore.activeAgent.shortLabel }}
+              {{ chatStore.agentMode === 'auto' ? '自动' : chatStore.activeAgent.shortLabel }}
             </button>
             <label class="sr-only" for="chat-input">输入消息</label>
             <textarea
               id="chat-input"
               ref="inputEl"
               v-model="inputMessage"
-              :disabled="isTyping"
+              :disabled="isBusy"
               rows="1"
               maxlength="800"
               class="flex-1 min-h-11 max-h-28 resize-none border-0 outline-none px-2 py-2 text-base leading-relaxed text-gray-800 placeholder:text-gray-400"
@@ -281,14 +291,50 @@
     </div>
 
     <BottomNav />
+
+    <div
+      v-if="showContextMenu"
+      class="fixed z-50 bg-white rounded-xl shadow-2xl border border-gray-200 py-2 min-w-[140px]"
+      :style="{ left: `${contextMenuPosition.x}px`, top: `${contextMenuPosition.y}px` }"
+      @click.stop
+    >
+      <button
+        class="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-pink-50 transition-colors"
+        @click="copyMessage(selectedMessage)"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+        复制
+      </button>
+      <button
+        class="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-pink-50 transition-colors"
+        @click="revokeMessage(selectedMessage)"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+        </svg>
+        撤回
+      </button>
+    </div>
+
+    <div
+      v-if="showCopyToast"
+      class="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50"
+    >
+      已复制到剪贴板
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { chatAPI, interviewAPI } from '../api'
 import { useChatStore } from '../stores/chat'
 import BottomNav from '../components/BottomNav.vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 const chatStore = useChatStore()
 const CLIENT_CONTEXT_TURN_LIMIT = 12
@@ -301,11 +347,17 @@ const localTyping = ref(false)
 const showModeMenu = ref(false)
 const showMoreMenu = ref(false)
 const lastRetryMessage = ref('')
+const hasAssistantStarted = ref(false)
+const showContextMenu = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const selectedMessage = ref(null)
+const showCopyToast = ref(false)
 
 const messages = computed(() => chatStore.messages)
-const isTyping = computed(() => chatStore.isAwaitingReply || localTyping.value)
+const isBusy = computed(() => chatStore.isAwaitingReply || localTyping.value)
+const isTyping = computed(() => isBusy.value && !hasAssistantStarted.value)
 const errorText = computed(() => chatStore.lastError)
-const canSend = computed(() => inputMessage.value.trim().length > 0 && !isTyping.value)
+const canSend = computed(() => inputMessage.value.trim().length > 0 && !isBusy.value)
 const waitingText = computed(() => chatStore.agentMode === 'knowledge' ? '正在查找合适的解释...' : '正在组织回复...')
 const memoryStatusText = computed(() => {
   if (!chatStore.memoryState?.has_memory && !chatStore.memoryState?.updated) return ''
@@ -401,12 +453,13 @@ function toggleModeMenu() {
 async function sendMessage(messageOverride = '') {
   const inputValue = typeof inputMessage.value === 'string' ? inputMessage.value : ''
   const text = String(messageOverride || inputValue).trim()
-  if (!text || isTyping.value) return
+  if (!text || isBusy.value) return
 
   if (!messageOverride) inputMessage.value = ''
   resetInputHeight()
   chatStore.lastError = ''
   lastRetryMessage.value = ''
+  hasAssistantStarted.value = false
   showModeMenu.value = false
 
   try {
@@ -439,6 +492,7 @@ async function sendMessage(messageOverride = '') {
   } finally {
     localTyping.value = false
     chatStore.isAwaitingReply = false
+    hasAssistantStarted.value = false
   }
 }
 
@@ -461,15 +515,24 @@ async function sendStreamingMessage(text) {
     }
 
     if (chunk.type === 'token') {
-      fullResponse += chunk.token || ''
+      hasAssistantStarted.value = true
       chatStore.lastError = ''
+      const displayTokens = splitDisplayToken(chunk.token || '')
 
-      if (!messageId) {
-        messageId = chatStore.addAssistantMessage(fullResponse, [], [], {
-          replyPhase: chunk.phase || 'answer'
-        })
-      } else {
-        chatStore.updateMessage(messageId, fullResponse)
+      for (const tokenPart of displayTokens) {
+        fullResponse += tokenPart
+
+        if (!messageId) {
+          messageId = chatStore.addAssistantMessage(fullResponse, [], [], {
+            replyPhase: chunk.phase || 'answer'
+          })
+        } else {
+          chatStore.updateMessage(messageId, fullResponse)
+        }
+
+        if (displayTokens.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 18))
+        }
       }
       continue
     }
@@ -484,7 +547,9 @@ async function sendStreamingMessage(text) {
           suggestions: chunk.suggestions || [],
           actions: chunk.actions || [],
           replyStatus: chunk.reply_status || 'ok',
-          elapsedMs: chunk.elapsed_ms || 0
+          elapsedMs: chunk.elapsed_ms || 0,
+          cacheHit: chunk.cache_hit || false,
+          cacheSimilarity: chunk.cache_similarity || 0
         })
       } else if (finalResponse) {
         messageId = chatStore.addAssistantMessage(
@@ -493,7 +558,9 @@ async function sendStreamingMessage(text) {
           chunk.actions || [],
           {
             replyStatus: chunk.reply_status || 'ok',
-            elapsedMs: chunk.elapsed_ms || 0
+            elapsedMs: chunk.elapsed_ms || 0,
+            cacheHit: chunk.cache_hit || false,
+            cacheSimilarity: chunk.cache_similarity || 0
           }
         )
       }
@@ -509,6 +576,24 @@ async function sendStreamingMessage(text) {
       }
     }
   }
+}
+
+function splitDisplayToken(token) {
+  const text = String(token || '')
+  if (!text) return []
+  if (text.length <= 10) return [text]
+
+  const chunks = []
+  let current = ''
+  for (const char of text) {
+    current += char
+    if (current.length >= 8 || '。！？!?，,\n'.includes(char)) {
+      chunks.push(current)
+      current = ''
+    }
+  }
+  if (current) chunks.push(current)
+  return chunks
 }
 
 function buildClientContext(currentText = '') {
@@ -595,6 +680,52 @@ function resetInputHeight() {
   inputEl.value.style.height = '44px'
 }
 
+function shouldRenderMarkdown(msg) {
+  return msg.role === 'assistant' && /[\*#\[\]\(\)_~`]/.test(msg.content)
+}
+
+function renderMarkdown(content) {
+  const rawHtml = marked.parse(content, { breaks: true, gfm: true })
+  return DOMPurify.sanitize(rawHtml, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'code', 'pre', 'blockquote'],
+    ALLOWED_ATTR: ['href', 'target', 'rel']
+  })
+}
+
+function showMessageMenu(event, message) {
+  selectedMessage.value = message
+  const x = Math.min(event.clientX, window.innerWidth - 160)
+  const y = Math.min(event.clientY, window.innerHeight - 120)
+  contextMenuPosition.value = { x, y }
+  showContextMenu.value = true
+}
+
+function hideMessageMenu() {
+  showContextMenu.value = false
+  selectedMessage.value = null
+}
+
+function copyMessage(message) {
+  if (!message) return
+  navigator.clipboard.writeText(message.content).then(() => {
+    showCopyToast.value = true
+    setTimeout(() => {
+      showCopyToast.value = false
+    }, 1500)
+  })
+  hideMessageMenu()
+}
+
+function revokeMessage(message) {
+  if (!message) return
+  chatStore.revokeMessagePair(message.id)
+  hideMessageMenu()
+}
+
+function handleWindowClick() {
+  hideMessageMenu()
+}
+
 onMounted(async () => {
   if (chatStore.isInterviewMode) {
     await nextTick()
@@ -617,6 +748,12 @@ onMounted(async () => {
   } catch (error) {
     console.log('Session will be created on first message')
   }
+
+  window.addEventListener('click', handleWindowClick)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('click', handleWindowClick)
 })
 
 watch(showSessionList, (newVal) => {
@@ -781,5 +918,82 @@ watch(showSessionList, (newVal) => {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
+}
+
+.markdown-content :deep(p) {
+  margin-bottom: 0.5em;
+}
+
+.markdown-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-content :deep(strong),
+.markdown-content :deep(b) {
+  font-weight: 600;
+}
+
+.markdown-content :deep(em),
+.markdown-content :deep(i) {
+  font-style: italic;
+}
+
+.markdown-content :deep(a) {
+  color: #db2777;
+  text-decoration: underline;
+}
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  margin-left: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown-content :deep(li) {
+  list-style: disc;
+}
+
+.markdown-content :deep(ol li) {
+  list-style: decimal;
+}
+
+.markdown-content :deep(code) {
+  background: #fce7f3;
+  padding: 0.125em 0.375em;
+  border-radius: 0.25em;
+  font-size: 0.875em;
+}
+
+.markdown-content :deep(pre) {
+  background: #1f2937;
+  color: #f9fafb;
+  padding: 0.75em;
+  border-radius: 0.5em;
+  overflow-x: auto;
+  margin-bottom: 0.5em;
+}
+
+.markdown-content :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.markdown-content :deep(h1),
+.markdown-content :deep(h2),
+.markdown-content :deep(h3),
+.markdown-content :deep(h4),
+.markdown-content :deep(h5),
+.markdown-content :deep(h6) {
+  font-weight: 600;
+  margin-top: 0.75em;
+  margin-bottom: 0.5em;
+}
+
+.markdown-content :deep(blockquote) {
+  border-left: 3px solid #ec4899;
+  padding-left: 1em;
+  margin-left: 0;
+  color: #6b7280;
 }
 </style>

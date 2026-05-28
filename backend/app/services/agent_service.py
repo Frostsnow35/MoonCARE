@@ -84,7 +84,12 @@ class AgentService:
         if not compaction_service:
             return context
 
-        conversation_messages = context.get("conversation_messages", [])
+        conversation_memory = dict(context.get("conversation_memory") or {})
+        conversation_messages = (
+            context.get("conversation_messages")
+            or conversation_memory.get("conversation_messages")
+            or []
+        )
         user_message = context.get("message", "")
         
         compacted_messages, stats = compaction_service.build_compacted_context(
@@ -94,6 +99,12 @@ class AgentService:
         
         # 更新上下文
         context["conversation_messages"] = compacted_messages
+        if conversation_memory:
+            conversation_memory["conversation_messages"] = compacted_messages
+            memory_state = dict(conversation_memory.get("memory_state") or {})
+            memory_state["compaction_stats"] = stats
+            conversation_memory["memory_state"] = memory_state
+            context["conversation_memory"] = conversation_memory
         context["compaction_stats"] = stats
         
         # 生成摘要
@@ -114,6 +125,11 @@ class AgentService:
             "knowledge": (
                 "当前是知识解释模式：优先用通俗语言回答问题，必要时结合用户经前体验做解释；"
                 "同时给出1-2条低风险行动建议，保持仅供参考，不做诊断。"
+            ),
+            "action_support": (
+                "当前是行动支持模式：用户现在要的是下一步，不是泛泛安抚；"
+                "先简短承接，再结合最近上下文给2-3个最小、低风险、马上能做的动作；"
+                "不要重复追问已经说清楚的原因，不要把建议写成空泛鼓励。"
             ),
             "auto": (
                 "当前是自动陪伴模式：根据用户内容在情绪陪伴、知识解释和经期照护建议之间自然切换。"
@@ -157,6 +173,37 @@ class AgentService:
         menstrual_related = bool(support_context.get("menstrual_related"))
         
         actions = []
+        recent_context_text = self._recent_user_context_text(state)
+        compact_message = "".join(f"{recent_context_text} {message}".split())
+        relationship_conflict = any(
+            term in compact_message
+            for term in ("男朋友", "伴侣", "对象", "老公", "女朋友", "朋友", "家人")
+        ) and any(
+            term in compact_message
+            for term in ("吵架", "争吵", "冷战", "生气", "烦", "委屈", "不理解", "指责", "矛盾")
+        )
+
+        if relationship_conflict:
+            return [
+                {
+                    "action": "pause_reply",
+                    "label": "先暂停回复",
+                    "description": "先把手机放下十分钟，避免在情绪最高点继续争论",
+                    "route": None,
+                },
+                {
+                    "action": "draft_message",
+                    "label": "写一句想法",
+                    "description": "只写事实和感受，先不急着发出去",
+                    "route": "/diary",
+                },
+                {
+                    "action": "boundary_note",
+                    "label": "整理边界",
+                    "description": "把你希望对方听见的一句话先留下来",
+                    "route": None,
+                },
+            ]
         
         # 定义情绪场景与关键词映射（按优先级排序）
         emotion_scenarios = [
@@ -314,6 +361,7 @@ class AgentService:
             "memory_state",
             {"has_memory": False, "count": 0, "updated": False, "categories": []},
         )
+        state["compaction_stats"] = (context or {}).get("compaction_stats") or state["memory_state"].get("compaction_stats")
         return state
 
     async def _route_with_deadline(
@@ -374,10 +422,34 @@ class AgentService:
     def _support_degraded_reply(self, user_message: str) -> str:
         """Return a contextual support fallback without a fixed failure template."""
         topic = self._fallback_topic(user_message)
-        return (
-            f"我跟上了，你说的“{topic}”不是一句轻飘飘的话。"
-            "先让自己靠稳一点，慢慢呼一口气；这件事可以不用马上整理好，我会陪你继续往下放。"
-        )
+        if topic and topic != "这件事":
+            return (
+                f"我在，也跟上你说的“{topic}”了。"
+                "先不用急着把它整理成完整的话；如果你愿意，我们先只说现在最压着你的那一点。"
+                "\n\n（当前大模型服务暂不可用，我将以简化模式为你提供支持）"
+            )
+        return "我在，你先不用急着整理好。要是愿意，可以先告诉我，现在最让你难受的那一下是什么。\n\n（当前大模型服务暂不可用，我将以简化模式为你提供支持）"
+
+    def _followup_after_fast_ack(self, user_message: str, state: Dict[str, Any]) -> str:
+        """Return a concise continuation after a fast acknowledgement was already streamed."""
+        state = state or {}
+        if self._looks_like_action_request(user_message):
+            return self._action_request_degraded_reply(user_message, state)
+
+        guard = self.response_quality_guard
+        if guard:
+            if guard._is_body_discomfort(user_message, state):
+                return "如果这会儿身体那边更难受，直接告诉我最明显的是哪里，我和你一起往下理。"
+            if guard._is_emotional_distress(user_message):
+                emotion = guard._named_emotion(user_message, state)
+                if emotion and emotion != "这份感受":
+                    return f"如果你愿意，可以先告诉我，是什么让这份{emotion}一下子涌上来了。"
+                return "如果你愿意，可以先告诉我，刚刚最让你难受的是哪一下。"
+
+        agent_mode = state.get("agent_mode", "auto")
+        if agent_mode == "knowledge" or self._looks_like_knowledge_question(user_message):
+            return self._knowledge_degraded_reply(user_message)
+        return self._support_degraded_reply(user_message)
 
     def _looks_like_action_request(self, user_message: str) -> bool:
         """Return whether the user is explicitly asking for next steps."""
@@ -398,8 +470,38 @@ class AgentService:
             "怎么处理",
             "怎么面对",
             "怎么回复",
+            "该怎么说",
+            "怎么和他说",
+            "怎么跟他说",
+            "怎么和她说",
+            "怎么跟她说",
+            "怎么沟通",
+            "怎么开口",
         )
         return any(marker in compact for marker in action_markers)
+
+    def _support_prompt_name(self, state: Dict[str, Any]) -> str:
+        """Choose the support prompt variant for this turn."""
+        if (state or {}).get("support_intent") == "action_support":
+            return "support_action_prompt.txt"
+        return "support_prompt.txt"
+
+    def _apply_support_intent(
+        self,
+        user_message: str,
+        state: Dict[str, Any],
+        agent_mode: str,
+    ) -> Dict[str, Any]:
+        """Annotate support turns as emotional support or action support."""
+        state = dict(state or {})
+        if agent_mode == "knowledge" or self._looks_like_knowledge_question(user_message):
+            state.pop("support_intent", None)
+            return state
+        support_intent = "action_support" if self._looks_like_action_request(user_message) else "support"
+        state["support_intent"] = support_intent
+        if support_intent == "action_support":
+            state["mode_guidance"] = self._mode_guidance("action_support")
+        return state
 
     def _recent_user_context_text(self, state: Dict[str, Any]) -> str:
         """Return recent user context used to make short action requests specific."""
@@ -514,12 +616,16 @@ class AgentService:
         state: Dict[str, Any],
     ) -> str:
         """Repair common conversational quality failures with deterministic rules."""
-        if self._looks_like_action_request(user_message) and self._is_vague_action_reply(reply):
+        is_action_request = self._looks_like_action_request(user_message) or (state or {}).get("support_intent") == "action_support"
+        if is_action_request and self._is_vague_action_reply(reply):
             return self._action_request_degraded_reply(user_message, state or {})
         if not self.response_quality_guard:
             return reply
         try:
-            return self.response_quality_guard.repair_reply(user_message, reply, state)
+            repaired = self.response_quality_guard.repair_reply(user_message, reply, state)
+            if is_action_request:
+                return repaired
+            return self.response_quality_guard.ensure_open_question(user_message, repaired, state)
         except Exception as exc:
             print(f"[AgentService] Response quality guard failed: {exc}")
             return reply
@@ -530,9 +636,62 @@ class AgentService:
             return False
         if state.get("risk_level") in {"high", "crisis"}:
             return False
+        if self._looks_like_action_request(user_message):
+            return False
         if self.response_quality_guard and self.response_quality_guard.is_quality_sensitive_turn(user_message):
             return False
         return True
+
+    def _get_cached_response(
+        self,
+        user_message: str,
+        state: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Read semantic cache only after safety perception says this turn is low risk."""
+        semantic_cache = self._get_semantic_cache()
+        if not semantic_cache or not self._can_use_semantic_cache(user_message, state):
+            return None
+        return semantic_cache.get_cached_response(
+            user_message,
+            similarity_threshold=settings.SEMANTIC_CACHE_SIMILARITY_THRESHOLD,
+            context=state,
+        )
+
+    def _write_cached_response(
+        self,
+        user_message: str,
+        reply: str,
+        state: Dict[str, Any],
+        intent: str,
+    ) -> None:
+        """Store safe low-risk replies without blocking the user response."""
+        semantic_cache = self._get_semantic_cache()
+        if not semantic_cache or not self._can_use_semantic_cache(user_message, state):
+            return
+        asyncio.create_task(asyncio.to_thread(
+            semantic_cache.set_cached_response,
+            user_message,
+            reply,
+            ttl_hours=settings.SEMANTIC_CACHE_TTL_HOURS,
+            context=state,
+            intent=intent,
+        ))
+
+    def _chunk_cached_text(self, text: str, size: int = 12) -> List[str]:
+        """Split cached text into small chunks for SSE rendering."""
+        clean_text = text or ""
+        if not clean_text:
+            return []
+        chunks: List[str] = []
+        current = ""
+        for char in clean_text:
+            current += char
+            if len(current) >= size or char in "。！？!?\n":
+                chunks.append(current)
+                current = ""
+        if current:
+            chunks.append(current)
+        return chunks
 
     def _direct_quality_reply(self, user_message: str, state: Dict[str, Any]) -> str:
         """Return a safety-aware deterministic support reply for quality-sensitive turns."""
@@ -574,6 +733,26 @@ class AgentService:
         emotion = "、".join(support_context.get("emotion_signals") or []) or "无"
         return f"可能与经前/经期有关：{menstrual}；身体线索：{body}；情绪线索：{emotion}。"
 
+    def _format_conversation_messages(self, conversation_messages: List[Dict[str, str]]) -> str:
+        """Format conversation history into a readable string for LLM."""
+        if not conversation_messages:
+            return "暂无历史对话。"
+        
+        formatted = []
+        for idx, msg in enumerate(conversation_messages, 1):
+            role = msg.get("role", "")
+            content = msg.get("content", "").strip()
+            if not content:
+                continue
+            
+            role_label = "用户" if role == "user" else "你"
+            formatted.append(f"{idx}. {role_label}：{content}")
+        
+        if not formatted:
+            return "暂无历史对话。"
+        
+        return "\n".join(formatted)
+
     def _build_support_stream_context(
         self,
         state: Dict[str, Any],
@@ -582,6 +761,9 @@ class AgentService:
     ) -> Dict[str, Any]:
         """Build streaming context with the same support prompt used by SupportAgent."""
         support_context = self._format_support_context(state.get("support_context", {}))
+        formatted_conversation_history = self._format_conversation_messages(
+            state.get("conversation_messages", [])
+        )
         context = {
             "cycle_phase": cycle_phase,
             "risk_level": risk_level,
@@ -590,12 +772,15 @@ class AgentService:
             "health_context": state.get("health_context", "暂无可用的周期/日记上下文。"),
             "recent_context": state.get("recent_context", "暂无最近对话。"),
             "retrieved_context": state.get("retrieved_context", "暂无检索片段。"),
+            "formatted_conversation_history": formatted_conversation_history,
             "mode_guidance": state.get("mode_guidance", ""),
             "conversation_messages": state.get("conversation_messages", []),
+            "support_intent": state.get("support_intent", "support"),
         }
         if render_prompt:
+            prompt_name = self._support_prompt_name(state)
             context["raw_system_prompt"] = render_prompt(
-                "support_prompt.txt",
+                prompt_name,
                 cycle_phase=cycle_phase,
                 risk_level=risk_level,
                 support_context=support_context,
@@ -603,7 +788,9 @@ class AgentService:
                 health_context=context["health_context"],
                 recent_context=context["recent_context"],
                 retrieved_context=context["retrieved_context"],
+                formatted_conversation_history=formatted_conversation_history,
                 mode_guidance=context["mode_guidance"],
+                support_intent=context["support_intent"],
             )
         return context
 
@@ -658,9 +845,14 @@ class AgentService:
             full_response = self._repair_reply_quality(user_message, full_response, state)
             yield {
                 "type": "end",
-                "actions": self._generate_action_suggestions(state),
+                "actions": self._generate_action_suggestions(state, "knowledge"),
+                "suggestions": [],
                 "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                 "full_response": full_response,
+                "reply_status": "ok",
+                "cache_hit": False,
+                "cache_similarity": 0.0,
+                "suppress_assessment_prompt": True,
             }
             return
 
@@ -692,6 +884,9 @@ class AgentService:
             "actions": self._generate_action_suggestions(state, agent_name),
             "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
             "full_response": reply,
+            "reply_status": "ok",
+            "cache_hit": False,
+            "cache_similarity": 0.0,
         }
 
     async def get_response(
@@ -728,59 +923,65 @@ class AgentService:
             state = self._attach_conversation_context(state, context, agent_mode)
             state["message"] = user_message
             state["agent_mode"] = agent_mode
+            state = self._apply_support_intent(user_message, state, agent_mode)
 
-            direct_reply = self._direct_quality_reply(user_message, state)
-            if direct_reply:
+            state["agent_mode"] = agent_mode  # 保存 agent_mode 到 state
+
+            # 3. 检查语义缓存。必须在风险感知之后执行，避免缓存绕过安全层。
+            cached_response = self._get_cached_response(user_message, state)
+            if cached_response:
+                cache_hit = True
+                cache_similarity = cached_response.get("similarity", 0.0)
+                cached_reply = self._repair_reply_quality(
+                    user_message,
+                    cached_response["response"],
+                    state,
+                )
                 actions = self._generate_action_suggestions(state, "support")
                 suggestions = self._generate_conversation_suggestions(state, "support")
                 elapsed_ms = int((time.perf_counter() - started_at) * 1000)
                 return {
-                    "message": direct_reply,
-                    "intent": "support_quality_guard",
+                    "message": cached_reply,
+                    "intent": "cache",
                     "emotion_detected": state.get("risk_level", "low"),
                     "suggestions": suggestions,
                     "actions": actions,
                     "state": state,
-                    "reply_status": "ok",
+                    "reply_status": "cache_hit",
                     "elapsed_ms": elapsed_ms,
                     "memory_state": state.get("memory_state", {"has_memory": False, "count": 0, "updated": False, "categories": []}),
-                    "cache_hit": False,
-                    "cache_similarity": 0.0,
+                    "cache_hit": True,
+                    "cache_similarity": cache_similarity,
+                    "cache_match_type": cached_response.get("match_type", ""),
                     "compaction_stats": state.get("compaction_stats"),
-                    "suppress_assessment_prompt": True,
                 }
-            state["agent_mode"] = agent_mode  # 保存 agent_mode 到 state
 
-            # 3. 检查语义缓存。必须在风险感知之后执行，避免缓存绕过安全层。
-            semantic_cache = self._get_semantic_cache()
-            if semantic_cache and self._can_use_semantic_cache(user_message, state):
-                cached_response = semantic_cache.get_cached_response(
-                    user_message,
-                    similarity_threshold=settings.SEMANTIC_CACHE_SIMILARITY_THRESHOLD,
-                )
-                if cached_response:
-                    cache_hit = True
-                    cache_similarity = cached_response.get("similarity", 0.0)
-                    cached_reply = self._repair_reply_quality(
-                        user_message,
-                        cached_response["response"],
-                        state,
-                    )
-                    actions = self._generate_action_suggestions(state, "support")
-                    suggestions = self._generate_conversation_suggestions(state, "support")
+            # 3.5 确定性直接回复：高置信度场景跳过 LLM，秒级返回
+            if reply_status == "ok" and self.response_quality_guard:
+                direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state)
+                if direct_reply:
+                    agent_name = "deterministic_support"
                     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                    actions = self._generate_action_suggestions(state, agent_name)
+                    suggestions = self._generate_conversation_suggestions(state, agent_name)
                     return {
-                        "message": cached_reply,
-                        "intent": "cache",
+                        "message": direct_reply,
+                        "intent": agent_name,
                         "emotion_detected": state.get("risk_level", "low"),
                         "suggestions": suggestions,
                         "actions": actions,
                         "state": state,
-                        "reply_status": "cache_hit",
+                        "reply_status": "ok",
                         "elapsed_ms": elapsed_ms,
                         "memory_state": state.get("memory_state", {"has_memory": False, "count": 0, "updated": False, "categories": []}),
-                        "cache_hit": True,
-                        "cache_similarity": cache_similarity,
+                        "cache_hit": False,
+                        "cache_similarity": 0.0,
+                        "compaction_stats": state.get("compaction_stats"),
+                        "suppress_assessment_prompt": (
+                            agent_mode == "knowledge"
+                            or str(agent_name).startswith("knowledge")
+                            or state.get("support_intent") == "action_support"
+                        ),
                     }
 
             # 4. Router 路由到对应 Agent
@@ -800,13 +1001,8 @@ class AgentService:
             reply = self._repair_reply_quality(user_message, reply, state)
 
             # 5. 保存到语义缓存（仅对低风险、非危机、非质量敏感消息）
-            if semantic_cache and self._can_use_semantic_cache(user_message, state) and reply_status == "ok":
-                asyncio.create_task(asyncio.to_thread(
-                    semantic_cache.set_cached_response,
-                    user_message,
-                    reply,
-                    ttl_hours=settings.SEMANTIC_CACHE_TTL_HOURS,
-                ))
+            if reply_status == "ok":
+                self._write_cached_response(user_message, reply, state, agent_name)
 
             # 5. 生成功能建议
             actions = self._generate_action_suggestions(state, agent_name)
@@ -846,7 +1042,12 @@ class AgentService:
             "cache_hit": cache_hit,
             "cache_similarity": cache_similarity,
             "compaction_stats": state.get("compaction_stats"),
-            "suppress_assessment_prompt": agent_mode == "knowledge" or str(agent_name).startswith("knowledge"),
+            "suppress_assessment_prompt": (
+                agent_mode == "knowledge"
+                or str(agent_name).startswith("knowledge")
+                or str(agent_name).startswith("action_support")
+                or state.get("support_intent") == "action_support"
+            ),
         }
 
     async def get_streaming_response(
@@ -876,6 +1077,8 @@ class AgentService:
             )
             state = self._attach_conversation_context(state, context, agent_mode)
             state["message"] = user_message
+            state["agent_mode"] = agent_mode
+            state = self._apply_support_intent(user_message, state, agent_mode)
 
             # 2. 检查安全边界，流式响应同样不能绕过安全感知层。
             risk_level = state.get("risk_level", "low")
@@ -895,6 +1098,44 @@ class AgentService:
                     "type": "end",
                     "actions": self._generate_action_suggestions(state),
                     "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                    "reply_status": "ok",
+                    "cache_hit": False,
+                    "cache_similarity": 0.0,
+                }
+                return
+
+            cached_response = self._get_cached_response(user_message, state)
+            if cached_response:
+                cached_reply = self._repair_reply_quality(
+                    user_message,
+                    cached_response["response"],
+                    state,
+                )
+                yield {
+                    "type": "start",
+                    "risk_level": risk_level,
+                    "agent_name": "cache",
+                }
+                first_latency = int((time.perf_counter() - started_at) * 1000)
+                for token in self._chunk_cached_text(cached_reply):
+                    yield {
+                        "type": "token",
+                        "token": token,
+                        "phase": "cache",
+                        "is_final": False,
+                        "first_token_latency_ms": first_latency,
+                    }
+                    await asyncio.sleep(0.05)
+                yield {
+                    "type": "end",
+                    "actions": self._generate_action_suggestions(state, "support"),
+                    "suggestions": self._generate_conversation_suggestions(state, "support"),
+                    "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                    "full_response": cached_reply,
+                    "reply_status": "cache_hit",
+                    "cache_hit": True,
+                    "cache_similarity": cached_response.get("similarity", 0.0),
+                    "cache_match_type": cached_response.get("match_type", ""),
                 }
                 return
 
@@ -912,15 +1153,22 @@ class AgentService:
 
             start_sent = False
             full_response = ""
+            fast_ack_text = ""
+            support_route_name = state.get("support_intent", "support")
             if self.response_quality_guard:
-                fast_ack = self.response_quality_guard.fast_ack_if_applicable(user_message, state)
+                fast_ack = ""
+                if support_route_name == "action_support":
+                    fast_ack = self.response_quality_guard.action_ack_if_applicable(user_message, state)
+                if not fast_ack:
+                    fast_ack = self.response_quality_guard.fast_ack_if_applicable(user_message, state)
                 if fast_ack:
                     yield {
                         "type": "start",
                         "risk_level": risk_level,
-                        "agent_name": "support",
+                        "agent_name": support_route_name,
                     }
                     start_sent = True
+                    fast_ack_text = fast_ack
                     full_response += fast_ack
                     yield {
                         "type": "token",
@@ -929,40 +1177,23 @@ class AgentService:
                         "is_final": False,
                         "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
                     }
-                else:
-                    direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state)
-                    if direct_reply:
-                        yield {
-                            "type": "start",
-                            "risk_level": risk_level,
-                            "agent_name": "support",
-                        }
-                        yield {
-                            "type": "token",
-                            "token": direct_reply,
-                            "is_final": True,
-                            "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
-                        }
-                        yield {
-                            "type": "end",
-                            "actions": self._generate_action_suggestions(state),
-                            "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
-                            "full_response": direct_reply,
-                        }
-                        return
 
             # 3. 获取 LLM 服务进行流式响应
             try:
                 llm_service = self._get_llm_service()
             except Exception as exc:
                 print(f"[AgentService] Streaming LLM unavailable, using soft fallback: {exc}")
-                fallback_reply = self._soft_error_fallback(user_message, state)
+                fallback_reply = (
+                    self._followup_after_fast_ack(user_message, state)
+                    if fast_ack_text
+                    else self._soft_error_fallback(user_message, state)
+                )
                 final_response = f"{full_response}{fallback_reply}" if full_response else fallback_reply
                 if not start_sent:
                     yield {
                         "type": "start",
                         "risk_level": risk_level,
-                        "agent_name": "support_fallback",
+                        "agent_name": "action_support_fallback" if support_route_name == "action_support" else "support_fallback",
                     }
                 yield {
                     "type": "token",
@@ -972,10 +1203,14 @@ class AgentService:
                 }
                 yield {
                     "type": "end",
-                    "actions": self._generate_action_suggestions(state, "support_fallback"),
+                    "actions": self._generate_action_suggestions(
+                        state,
+                        "action_support_fallback" if support_route_name == "action_support" else "support_fallback",
+                    ),
                     "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                     "full_response": final_response,
                     "reply_status": "error_fallback",
+                    "suppress_assessment_prompt": support_route_name == "action_support",
                 }
                 return
 
@@ -999,6 +1234,7 @@ class AgentService:
                     "elapsed_ms": response.get("elapsed_ms", 0),
                     "full_response": response.get("message", ""),
                     "reply_status": response.get("reply_status", "ok"),
+                    "suppress_assessment_prompt": response.get("suppress_assessment_prompt", False),
                 }
                 return
 
@@ -1010,23 +1246,27 @@ class AgentService:
                 yield {
                     "type": "start",
                     "risk_level": risk_level,
-                    "agent_name": "support",
+                    "agent_name": support_route_name,
                 }
 
             # 6. 流式获取响应
             first_token_received = False
             first_token_latency_ms = 0
+            fallback_emitted = False
+            stream_reply_status = "ok"
 
             async for chunk in llm_service.async_streaming_generate_reply(user_message, stream_context):
                 if "error" in chunk:
                     if first_token_received:
                         break
                     fallback_token = (
-                        "我会继续陪着这件事。"
+                        self._followup_after_fast_ack(user_message, state)
                         if full_response
                         else self._timeout_fallback(user_message, state)
                     )
                     full_response += fallback_token
+                    fallback_emitted = True
+                    stream_reply_status = "timeout_fallback"
                     yield {
                         "type": "token",
                         "token": fallback_token,
@@ -1048,8 +1288,26 @@ class AgentService:
                         "is_final": False,
                         "first_token_latency_ms": first_token_latency_ms,
                     }
+
+            if not first_token_received and not fallback_emitted:
+                fallback_token = (
+                    self._followup_after_fast_ack(user_message, state)
+                    if full_response
+                    else self._timeout_fallback(user_message, state)
+                )
+                full_response += fallback_token
+                fallback_emitted = True
+                stream_reply_status = "timeout_fallback"
+                yield {
+                    "type": "token",
+                    "token": fallback_token,
+                    "is_final": True,
+                    "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
+                }
             
-            full_response = self._repair_reply_quality(user_message, full_response, state)
+            if not fast_ack_text:
+                full_response = self._repair_reply_quality(user_message, full_response, state)
+            self._write_cached_response(user_message, full_response, state, support_route_name)
 
             # 7. 发送结束信号
             yield {
@@ -1057,23 +1315,39 @@ class AgentService:
                 "actions": self._generate_action_suggestions(state),
                 "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                 "full_response": full_response,
-                "reply_status": "ok",
+                "reply_status": stream_reply_status,
+                "cache_hit": False,
+                "cache_similarity": 0.0,
+                "suppress_assessment_prompt": support_route_name == "action_support",
             }
 
         except Exception as e:
             print(f"[AgentService] Streaming error: {e}")
             traceback.print_exc()
+            fallback_state = {"risk_level": "low", "message": user_message, "agent_mode": agent_mode}
+            fallback_reply = self._soft_error_fallback(user_message, fallback_state)
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            yield {
+                "type": "start",
+                "risk_level": "low",
+                "agent_name": "support_fallback",
+            }
             yield {
                 "type": "token",
-                "token": self._soft_error_fallback(user_message, {"risk_level": "low", "message": user_message}),
+                "token": fallback_reply,
                 "is_final": True,
-                "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
+                "first_token_latency_ms": elapsed_ms,
             }
             yield {
                 "type": "end",
-                "actions": [],
+                "actions": self._generate_action_suggestions(fallback_state, "support_fallback"),
+                "suggestions": self._generate_conversation_suggestions(fallback_state, "support_fallback"),
                 "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
-                "error": str(e),
+                "full_response": fallback_reply,
+                "reply_status": "error_fallback",
+                "cache_hit": False,
+                "cache_similarity": 0.0,
+                "first_token_latency_ms": elapsed_ms,
             }
 
 

@@ -268,7 +268,7 @@ class LLMService:
             model=self.model,
             messages=messages,
             temperature=0.85,
-            max_tokens=320,
+            max_tokens=settings.MAX_RESPONSE_TOKENS,
         )
 
         text = response.choices[0].message.content or ""
@@ -313,7 +313,7 @@ class LLMService:
                 model=self.model,
                 messages=messages,
                 temperature=0.85,
-                max_tokens=320,
+                max_tokens=settings.MAX_RESPONSE_TOKENS,
                 stream=True,
             )
 
@@ -381,7 +381,7 @@ class LLMService:
                 model=self.model,
                 messages=messages,
                 temperature=0.85,
-                max_tokens=320,
+                max_tokens=settings.MAX_RESPONSE_TOKENS,
                 stream=True,
             )
 

@@ -291,9 +291,9 @@ import { useChatStore } from '../stores/chat'
 import BottomNav from '../components/BottomNav.vue'
 
 const chatStore = useChatStore()
-const CHAT_REPLY_TIMEOUT_MS = 50000
-const STREAM_FIRST_CHUNK_TIMEOUT_MS = 25000
-const STREAM_OVERALL_TIMEOUT_MS = 90000
+const CHAT_REPLY_TIMEOUT_MS = 180000
+const STREAM_FIRST_CHUNK_TIMEOUT_MS = 120000
+const STREAM_OVERALL_TIMEOUT_MS = 180000
 const CLIENT_CONTEXT_TURN_LIMIT = 12
 const CLIENT_CONTEXT_TEXT_LIMIT = 500
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
@@ -560,7 +560,12 @@ async function sendStreamingMessage(text) {
     }
 
   } catch (error) {
-    console.error('Streaming error:', error)
+    const isAbortError = error.name === 'AbortError' || error.message === 'BodyStreamBuffer was aborted'
+    if (isAbortError) {
+      console.warn('Streaming request aborted (timeout or user cancelled)')
+    } else {
+      console.error('Streaming error:', error)
+    }
     
     try {
       const result = await withTimeout(
@@ -583,7 +588,12 @@ async function sendStreamingMessage(text) {
       }
       chatStore.addAssistantMessage(result.reply, result.suggestions || [], result.actions || [])
     } catch (fallbackError) {
-      console.error('Fallback error:', fallbackError)
+      const isTimeout = fallbackError?.message === 'CHAT_REPLY_TIMEOUT' || fallbackError?.code === 'ECONNABORTED'
+      if (isTimeout) {
+        console.warn('Fallback request timed out:', fallbackError.message)
+      } else {
+        console.error('Fallback error:', fallbackError)
+      }
       chatStore.addAssistantMessage('我还在这里。你刚说的内容不会被丢掉，我们可以继续慢慢来。', [], [])
     }
   } finally {

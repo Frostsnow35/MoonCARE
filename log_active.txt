@@ -1,0 +1,121 @@
+ERROR: MoonCARE did not become healthy in time. Recent app logs:
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'
+mooncare-app  | Waiting for PostgreSQL to be ready...
+mooncare-app  | PostgreSQL is ready.
+mooncare-app  | Checking application import path...
+mooncare-app  | Traceback (most recent call last):
+mooncare-app  |   File "<string>", line 1, in <module>
+mooncare-app  |   File "/app/backend/app/main.py", line 19, in <module>
+mooncare-app  |     from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
+mooncare-app  |   File "/app/backend/app/api/v1/biometric.py", line 13, in <module>
+mooncare-app  |     from app.api.v1.deps import get_current_user_id
+mooncare-app  |   File "/app/backend/app/api/v1/deps.py", line 4, in <module>
+mooncare-app  |     import jwt
+mooncare-app  | ModuleNotFoundError: No module named 'jwt'

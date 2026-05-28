@@ -15,7 +15,7 @@ function nextMessageId() {
 export const useChatStore = defineStore('chat', () => {
   const AGENT_PROFILES = {
     auto: {
-      label: '情绪宝宝',
+      label: '自动模式',
       shortLabel: '自动',
       helper: '自动衔接倾听、知识解释和经期照护建议',
       welcome: '我先在这里陪你。你可以随便说一点今天的感受，也可以问身体变化或怎么照顾自己。我们慢慢来，不急着整理清楚。'
@@ -91,6 +91,41 @@ export const useChatStore = defineStore('chat', () => {
         ...messages.value[index],
         ...metadata
       }
+    }
+  }
+
+  function deleteMessage(messageId) {
+    const index = messages.value.findIndex(msg => msg.id === messageId)
+    if (index !== -1) {
+      messages.value.splice(index, 1)
+    }
+  }
+
+  function revokeMessagePair(messageId) {
+    const index = messages.value.findIndex(msg => msg.id === messageId)
+    if (index === -1) return
+
+    const message = messages.value[index]
+
+    if (message.role === 'user') {
+      const messagesToRemove = [messageId]
+
+      let nextIndex = index + 1
+      if (nextIndex < messages.value.length) {
+        const nextMessage = messages.value[nextIndex]
+        if (nextMessage.role === 'assistant') {
+          messagesToRemove.push(nextMessage.id)
+        }
+      }
+
+      for (const id of messagesToRemove) {
+        const removeIndex = messages.value.findIndex(msg => msg.id === id)
+        if (removeIndex !== -1) {
+          messages.value.splice(removeIndex, 1)
+        }
+      }
+    } else {
+      deleteMessage(messageId)
     }
   }
 
@@ -252,6 +287,8 @@ export const useChatStore = defineStore('chat', () => {
     updateMessage,
     updateMessageActions,
     updateMessageMetadata,
+    deleteMessage,
+    revokeMessagePair,
     bootstrapConversation,
     setAgentMode,
     createSession,

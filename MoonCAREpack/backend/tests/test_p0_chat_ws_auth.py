@@ -14,6 +14,9 @@ sys.path.insert(0, str(BACKEND_ROOT))
 
 
 class _FakeAgentService:
+    def prepare_streaming_state(self, message, context, agent_mode):
+        return {"risk_level": "low", "message": message, "support_context": {}}, ""
+
     async def get_response(
         self,
         user_id: int,
@@ -39,6 +42,7 @@ class _FakeAgentService:
         user_message: str,
         context: dict,
         agent_mode: str = "auto",
+        **kwargs,
     ):
         yield {"type": "start", "risk_level": "low", "agent_name": "support"}
         yield {"type": "token", "token": "我在", "is_final": False}

@@ -23,6 +23,9 @@ _NVIDIA_MODEL_ALIASES = {
     "glm-5.1": "z-ai/glm-5.1",
     "glm5.1": "z-ai/glm-5.1",
     "z-ai/glm5.1": "z-ai/glm-5.1",
+    "kimi-k2.6": "moonshotai/kimi-k2.6",
+    "kimi": "moonshotai/kimi-k2.6",
+    "moonshot/kimi": "moonshotai/kimi-k2.6",
 }
 
 logger = logging.getLogger(__name__)

@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
+const backendTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8001'
+
 export default defineConfig({
   plugins: [vue()],
   base: './',
@@ -9,7 +11,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: backendTarget,
         changeOrigin: true
       }
     }

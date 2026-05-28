@@ -11,6 +11,8 @@
   "dependencies": {
     "@vueuse/core": "^10.7.2",
     "axios": "^1.6.5",
+    "dompurify": "^3.4.7",
+    "marked": "^18.0.4",
     "pinia": "^2.1.7",
     "vue": "^3.4.15",
     "vue-router": "^4.2.5"

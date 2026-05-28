@@ -36,15 +36,15 @@ class ConversationCompactionService:
         # 分层记忆配置
         self.layer_config = {
             "recent": {
-                "turns": 3,
-                "max_tokens": 512,
+                "turns": 8,
+                "max_tokens": 1024,
                 "priority": 1.0,
             },
             "middle": {
-                "turns": 5,
-                "max_tokens": 1024,
+                "turns": 10,
+                "max_tokens": 1536,
                 "priority": 0.7,
-                "compression_ratio": 0.5,
+                "compression_ratio": 0.6,
             },
             "long_term": {
                 "turns": 10,

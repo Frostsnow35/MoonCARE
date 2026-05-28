@@ -4,7 +4,7 @@ const api_base_url = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 const api = axios.create({
   baseURL: api_base_url,
-  timeout: 25000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -28,7 +28,11 @@ api.interceptors.response.use(
       localStorage.removeItem('access_token')
       localStorage.removeItem('user')
     }
-    console.error('API Error:', error)
+    if (error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED') {
+      console.warn('API request aborted or cancelled:', error.message)
+    } else {
+      console.error('API Error:', error)
+    }
     return Promise.reject(error)
   }
 )

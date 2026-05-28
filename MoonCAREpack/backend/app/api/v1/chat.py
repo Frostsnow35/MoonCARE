@@ -635,9 +635,11 @@ async def stream_chat_message(
     agent_service = get_agent_service()
     nlp_service = NLPService()
 
-    nlp_result = await nlp_service.analyze_text(message)
-    intent = nlp_service.get_intent(message)
-    is_sensitive = nlp_service.check_sensitive(message)
+    nlp_result, intent, is_sensitive = await asyncio.gather(
+        nlp_service.analyze_text(message),
+        asyncio.to_thread(nlp_service.get_intent, message),
+        asyncio.to_thread(nlp_service.check_sensitive, message),
+    )
 
     context = {
         **nlp_result,
@@ -653,46 +655,22 @@ async def stream_chat_message(
         client_context=client_context,
     )
 
-    # 先检查确定性回复
-    direct_response = await agent_service.get_response(
-        user_id=user_id,
-        session_id=session_id,
-        user_message=message,
-        context=context,
-        agent_mode=agent_mode,
-    )
-    needs_llm_followup = direct_response.get("needs_llm_followup", False)
-    fast_reply = direct_response.get("message", "")
+    # 构建 perception + 上下文（只做一次，后续 streaming 复用）
+    state, _ = await agent_service.prepare_streaming_state(message, context, agent_mode)
+    risk_level = state.get("risk_level", "low")
 
     async def event_stream() -> AsyncGenerator[str, None]:
-        nonlocal needs_llm_followup, fast_reply
+        # 全部走 LLM 流式响应，无模板直接回复
+        full_response = ""
         
-        # 如果有确定性回复，立即发送
-        if fast_reply:
-            data = {
-                'type': 'direct_reply',
-                'message': fast_reply,
-                'session_id': session_id,
-                'risk_level': direct_response.get('risk_level', 'low'),
-                'sentiment_score': nlp_result.get('sentiment_score', 0.0),
-                'intent': direct_response.get('intent', 'support_quality_guard'),
-                'suggestions': direct_response.get('suggestions', []),
-                'actions': direct_response.get('actions', []),
-                'needs_llm_followup': needs_llm_followup,
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-        
-        # 如果需要 LLM followup，继续调用流式接口
-        if needs_llm_followup:
-            full_response = ""
-            
-            async for chunk in agent_service.get_streaming_response(
-                user_id=user_id,
-                session_id=session_id,
-                user_message=message,
-                context=context,
-                agent_mode=agent_mode,
-            ):
+        async for chunk in agent_service.get_streaming_response(
+            user_id=user_id,
+            session_id=session_id,
+            user_message=message,
+            context=context,
+            agent_mode=agent_mode,
+            pre_built_state=state,
+        ):
                 chunk_type = chunk.get("type")
 
                 if chunk_type == "start":
@@ -735,21 +713,11 @@ async def stream_chat_message(
                         sentiment_score=nlp_result.get("sentiment_score"),
                         is_sensitive=1 if is_sensitive else 0,
                     )
-                    # 保存确定性回复
-                    if fast_reply:
-                        fast_conv = Conversation(
-                            user_id=user_id,
-                            session_id=session_id,
-                            turn_number=last_turn + 2,
-                            role="assistant",
-                            content=fast_reply,
-                        )
-                        db.add(fast_conv)
                     # 保存 LLM 回复
                     llm_conv = Conversation(
                         user_id=user_id,
                         session_id=session_id,
-                        turn_number=last_turn + 3 if fast_reply else last_turn + 2,
+                        turn_number=last_turn + 2,
                         role="assistant",
                         content=final_response,
                     )
@@ -777,33 +745,6 @@ async def stream_chat_message(
                     yield f"data: {json.dumps(data)}\n\n"
     
     # 如果不需要 LLM followup，保存单条回复
-    if not needs_llm_followup and fast_reply:
-        last_turn = db.query(func.max(Conversation.turn_number)).filter(
-            Conversation.user_id == user_id,
-            Conversation.session_id == session_id,
-        ).scalar() or 0
-        
-        user_conv = Conversation(
-            user_id=user_id,
-            session_id=session_id,
-            turn_number=last_turn + 1,
-            role="user",
-            content=message,
-            intent=intent,
-            sentiment_score=nlp_result.get("sentiment_score"),
-            is_sensitive=1 if is_sensitive else 0,
-        )
-        assistant_conv = Conversation(
-            user_id=user_id,
-            session_id=session_id,
-            turn_number=last_turn + 2,
-            role="assistant",
-            content=fast_reply,
-        )
-        db.add(user_conv)
-        db.add(assistant_conv)
-        db.commit()
-
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",

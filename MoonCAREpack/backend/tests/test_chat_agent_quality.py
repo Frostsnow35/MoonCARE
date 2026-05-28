@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -190,6 +191,38 @@ class StreamingFallbackTests(unittest.TestCase):
         self.assertTrue(end_chunks)
         self.assertNotIn("error", end_chunks[-1])
 
+    def test_streaming_support_uses_timeout_fallback_when_llm_stream_is_empty(self):
+        import asyncio
+        from app.services import agent_service as agent_module
+
+        class EmptyStreamLLM:
+            async def async_streaming_generate_reply(self, user_message, context):
+                if False:
+                    yield {"token": ""}
+
+        async def collect_chunks():
+            service = agent_module.AgentService()
+            with patch.object(service, "_get_llm_service", return_value=EmptyStreamLLM()):
+                return [
+                    chunk
+                    async for chunk in service.get_streaming_response(
+                        user_id=1,
+                        session_id="empty-stream-session",
+                        user_message="hello",
+                        context={"conversation_memory": {"conversation_messages": []}},
+                        agent_mode="support",
+                        pre_built_state={"risk_level": "low", "message": "hello"},
+                    )
+                ]
+
+        chunks = asyncio.run(collect_chunks())
+        token_text = "".join(chunk.get("token", "") for chunk in chunks if chunk.get("type") == "token")
+        end_chunks = [chunk for chunk in chunks if chunk.get("type") == "end"]
+
+        self.assertTrue(token_text)
+        self.assertTrue(end_chunks)
+        self.assertEqual(end_chunks[-1].get("full_response"), token_text)
+
 
 class SemanticCacheCompatibilityTests(unittest.TestCase):
     def test_dummy_cache_matches_agent_service_contract(self):
@@ -199,6 +232,30 @@ class SemanticCacheCompatibilityTests(unittest.TestCase):
 
         self.assertIsNone(cache.get_cached_response("hello"))
         self.assertIsNone(cache.set_cached_response("hello", "reply", ttl_hours=1))
+
+
+class LLMServiceTokenBudgetTests(unittest.TestCase):
+    def test_generate_reply_uses_configured_max_response_tokens(self):
+        from app.agents.llm_service import LLMService
+        from app.config import settings
+
+        calls = []
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                message = SimpleNamespace(content="我是她语 MoonCARE 的情绪陪伴者。")
+                choice = SimpleNamespace(message=message)
+                return SimpleNamespace(choices=[choice])
+
+        service = object.__new__(LLMService)
+        service.model = "stepfun-ai/step-3.5-flash"
+        service.client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+        reply = service.generate_reply("你是谁", {"risk_level": "low"})
+
+        self.assertIn("MoonCARE", reply)
+        self.assertEqual(calls[-1]["max_tokens"], settings.MAX_RESPONSE_TOKENS)
 
 
 class AgentServiceQualityGuardTests(unittest.TestCase):

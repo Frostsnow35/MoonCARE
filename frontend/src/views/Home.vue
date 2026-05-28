@@ -146,7 +146,7 @@
           <span class="text-xs text-gray-700">波动曲线</span>
         </router-link>
         <div
-          @click="startInterview"
+          @click="startStateChat"
           class="flex flex-col items-center justify-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform cursor-pointer"
         >
           <span class="text-2xl">🩷</span>
@@ -166,7 +166,6 @@ import { computed, onMounted } from 'vue'
 import { useHealthStore } from '../stores/health'
 import { useChatStore } from '../stores/chat'
 import { useRouter } from 'vue-router'
-import { interviewAPI } from '../api'
 import BottomNav from '../components/BottomNav.vue'
 
 const router = useRouter()
@@ -296,15 +295,9 @@ function goToProfile() {
   router.push('/profile')
 }
 
-async function startInterview() {
-  try {
-    const result = await interviewAPI.start(1)
-    chatStore.addAssistantMessage(result.reply, [])
-    chatStore.setInterviewMode(true, result.phase)
-    router.push('/chat')
-  } catch (error) {
-    console.error('Failed to start interview:', error)
-  }
+function startStateChat() {
+  chatStore.endInterview()
+  router.push('/chat')
 }
 </script>
 

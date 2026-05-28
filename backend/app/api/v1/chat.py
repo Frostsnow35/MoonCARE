@@ -108,6 +108,86 @@ def _safe_capture_memory(
         return {"updated": False, "count": 0, "categories": [], "reason": "error"}
 
 
+def _chat_response_metadata(
+    source: Dict,
+    assessment_state: Optional[Dict] = None,
+    memory_state: Optional[Dict] = None,
+) -> Dict:
+    """Build shared assistant metadata for REST, SSE, and WebSocket responses."""
+    return {
+        "reply_status": source.get("reply_status", "ok"),
+        "elapsed_ms": source.get("elapsed_ms", 0),
+        "cache_hit": source.get("cache_hit", False),
+        "cache_similarity": source.get("cache_similarity", 0.0),
+        "cache_match_type": source.get("cache_match_type", ""),
+        "first_token_latency_ms": source.get("first_token_latency_ms", 0),
+        "assessment_state": assessment_state or {},
+        "memory_state": memory_state or {},
+    }
+
+
+def _build_rest_chat_payload(
+    session_id: str,
+    response: Dict,
+    is_sensitive: bool,
+    assessment_state: Optional[Dict],
+    memory_state: Optional[Dict],
+) -> Dict:
+    """Build the REST chat response while preserving the legacy reply field."""
+    payload = {
+        "session_id": session_id,
+        "reply": response["message"],
+        "intent": response.get("intent", "general"),
+        "risk_level": response.get("state", {}).get("risk_level", "low"),
+        "suggestions": response.get("suggestions", []),
+        "actions": response.get("actions", []),
+        "is_sensitive": is_sensitive,
+    }
+    payload.update(_chat_response_metadata(response, assessment_state, memory_state))
+    return payload
+
+
+def _build_ws_assistant_payload(
+    response: Dict,
+    sentiment_score: float,
+    is_sensitive: bool,
+    assessment_state: Optional[Dict],
+    memory_state: Optional[Dict],
+) -> Dict:
+    """Build the WebSocket assistant payload with shared metadata."""
+    payload = {
+        "type": "assistant",
+        "message": response["message"],
+        "sentiment_score": sentiment_score,
+        "intent": response.get("intent", "general"),
+        "is_sensitive": is_sensitive,
+        "suggestions": response.get("suggestions", []),
+        "actions": response.get("actions", []),
+        "risk_level": response.get("state", {}).get("risk_level", "low"),
+    }
+    payload.update(_chat_response_metadata(response, assessment_state, memory_state))
+    return payload
+
+
+def _build_sse_end_payload(
+    session_id: str,
+    final_response: str,
+    chunk: Dict,
+    assessment_state: Optional[Dict],
+    memory_state: Optional[Dict],
+) -> Dict:
+    """Build the final SSE event payload with shared metadata."""
+    payload = {
+        "type": "end",
+        "session_id": session_id,
+        "full_response": final_response,
+        "actions": chunk.get("actions", []),
+        "suggestions": chunk.get("suggestions", []),
+    }
+    payload.update(_chat_response_metadata(chunk, assessment_state, memory_state))
+    return payload
+
+
 def _truncate_client_context(text: str, limit: int = 500) -> str:
     """Bound client-provided context before it is used as prompt-only history."""
     normalized = " ".join((text or "").split())
@@ -306,21 +386,15 @@ async def _websocket_chat_authenticated(websocket: WebSocket):
                 is_sensitive=is_sensitive,
             )
 
-            # Send response
-            await websocket.send_json({
-                "type": "assistant",
-                "message": response["message"],
-                "sentiment_score": nlp_result["sentiment_score"],
-                "intent": response.get("intent", "general"),
-                "is_sensitive": is_sensitive,
-                "suggestions": response.get("suggestions", []),
-                "actions": response.get("actions", []),
-                "risk_level": response.get("state", {}).get("risk_level", "low"),
-                "reply_status": response.get("reply_status", "ok"),
-                "elapsed_ms": response.get("elapsed_ms", 0),
-                "assessment_state": assessment_result.assessment_state,
-                "memory_state": memory_state,
-            })
+            await websocket.send_json(
+                _build_ws_assistant_payload(
+                    response=response,
+                    sentiment_score=nlp_result["sentiment_score"],
+                    is_sensitive=is_sensitive,
+                    assessment_state=assessment_result.assessment_state,
+                    memory_state=memory_state,
+                )
+            )
 
     except WebSocketDisconnect:
         manager.disconnect(session_id)
@@ -493,19 +567,13 @@ async def send_chat_message(
         is_sensitive=is_sensitive,
     )
 
-    return {
-        "session_id": session_id,
-        "reply": response["message"],
-        "intent": response.get("intent", "general"),
-        "risk_level": response.get("state", {}).get("risk_level", "low"),
-        "suggestions": response.get("suggestions", []),
-        "actions": response.get("actions", []),
-        "is_sensitive": is_sensitive,
-        "reply_status": response.get("reply_status", "ok"),
-        "elapsed_ms": response.get("elapsed_ms", 0),
-        "assessment_state": assessment_result.assessment_state,
-        "memory_state": memory_state,
-    }
+    return _build_rest_chat_payload(
+        session_id=session_id,
+        response=response,
+        is_sensitive=is_sensitive,
+        assessment_state=assessment_result.assessment_state,
+        memory_state=memory_state,
+    )
 
 
 @router.get("/sessions")
@@ -591,6 +659,7 @@ async def stream_chat_message(
 
     async def event_stream() -> AsyncGenerator[str, None]:
         full_response = ""
+        first_token_latency_ms = 0
         
         async for chunk in agent_service.get_streaming_response(
             user_id=user_id,
@@ -613,6 +682,8 @@ async def stream_chat_message(
             elif chunk_type == "token":
                 token = chunk.get("token", "")
                 full_response += token
+                if not first_token_latency_ms:
+                    first_token_latency_ms = chunk.get("first_token_latency_ms", 0)
                 data = {
                     'type': 'token',
                     'token': token,
@@ -672,17 +743,14 @@ async def stream_chat_message(
                     is_sensitive=is_sensitive,
                 )
 
-                data = {
-                    'type': 'end',
-                    'session_id': session_id,
-                    'full_response': final_response,
-                    'actions': chunk.get('actions', []),
-                    'suggestions': chunk.get('suggestions', []),
-                    'elapsed_ms': chunk.get('elapsed_ms', 0),
-                    'reply_status': chunk.get('reply_status', 'ok'),
-                    'assessment_state': assessment_result.assessment_state,
-                    'memory_state': memory_state,
-                }
+                chunk["first_token_latency_ms"] = chunk.get("first_token_latency_ms", first_token_latency_ms)
+                data = _build_sse_end_payload(
+                    session_id=session_id,
+                    final_response=final_response,
+                    chunk=chunk,
+                    assessment_state=assessment_result.assessment_state,
+                    memory_state=memory_state,
+                )
                 # 再生成 SSE 格式的数据
                 yield f"data: {json.dumps(data)}\n\n"
 

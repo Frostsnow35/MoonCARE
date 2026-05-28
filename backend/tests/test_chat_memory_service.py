@@ -75,6 +75,24 @@ class ChatMemoryServiceTests(unittest.TestCase):
         self.assertNotIn("诊断", prompt_context["memory_context"])
         self.assertNotIn("筛查", prompt_context["memory_context"])
 
+    def test_capture_effective_comfort_preference_for_future_period_support(self):
+        from app.services.chat_memory_service import ChatMemoryService
+
+        service = ChatMemoryService(self.db)
+
+        service.capture_user_message(
+            user_id=1,
+            conversation_id=None,
+            message="我经期肚子痛的时候热敷会舒服一点，你别一下子给我很多建议",
+            context={"sentiment_score": -0.3, "cycle_phase": "menstrual"},
+            is_sensitive=False,
+        )
+
+        prompt_context = service.build_prompt_context(user_id=1, session_id="session-comfort")
+        self.assertIn("热敷", prompt_context["memory_context"])
+        self.assertIn("舒服一点", prompt_context["memory_context"])
+        self.assertIn("少量建议", prompt_context["memory_context"])
+
     def test_crisis_message_is_not_saved_as_regular_memory(self):
         from app.models.chat_memory import ChatMemory
         from app.services.chat_memory_service import ChatMemoryService

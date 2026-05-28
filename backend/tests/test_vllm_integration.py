@@ -57,6 +57,17 @@ class VLLMIntegrationTests(unittest.TestCase):
             value = getattr(settings, var)
             print(f"  {var} = {value or '(未设置)'}")
             self.assertIsNotNone(value, f"配置项 {var} 未找到")
+
+    def test_03b_chat_agent_optimization_config_supported(self):
+        """聊天 Agent 优化需要的缓存和上下文窗口配置必须可读取。"""
+        from app.config import settings
+
+        self.assertTrue(hasattr(settings, "SEMANTIC_CACHE_MAX_SIZE"))
+        self.assertTrue(hasattr(settings, "CHAT_CONTEXT_RECENT_TURNS"))
+        self.assertTrue(hasattr(settings, "CHAT_CONTEXT_MAX_TURNS"))
+        self.assertGreaterEqual(settings.SEMANTIC_CACHE_MAX_SIZE, 1)
+        self.assertEqual(settings.CHAT_CONTEXT_RECENT_TURNS, 20)
+        self.assertEqual(settings.CHAT_CONTEXT_MAX_TURNS, 30)
     
     def test_04_llm_service_supports_vllm_provider(self):
         """测试 LLMService 支持 vLLM 提供方（不实际调用）"""

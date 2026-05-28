@@ -5,7 +5,7 @@ Agent服务 - 委托给新的 Agent 系统
 import asyncio
 import time
 import traceback
-from typing import Any, Dict, List, Optional, AsyncGenerator
+from typing import Any, Dict, List, Optional, AsyncGenerator, Tuple
 from app.config import settings
 from app.utils.safety import SAFE_INTERVENTION_FALLBACK, contains_crisis_signal
 
@@ -57,7 +57,11 @@ class AgentService:
 
     def _get_llm_service(self):
         if self.llm_service is None and LLMService:
-            self.llm_service = LLMService()
+            try:
+                self.llm_service = LLMService()
+            except Exception as e:
+                print(f"[AgentService] Failed to initialize LLM service: {e}")
+                self.llm_service = None
         return self.llm_service
 
     def _get_semantic_cache(self):
@@ -121,7 +125,7 @@ class AgentService:
         }
         return guidance.get(agent_mode, guidance["auto"])
 
-    def _should_show_actions(self, state: Dict[str, Any], agent_name: str = "") -> bool:
+    def _should_show_actions(self, state: Dict[str, Any], agent_name: str = "", llm_reply: str = "") -> bool:
         """判断是否应该显示行动建议"""
         risk_level = state.get("risk_level", "low")
         message = state.get("message", "")
@@ -141,14 +145,90 @@ class AgentService:
         if state.get("user_rejected_action", False):
             return False
         
+        # 纯倾听阶段（对话轮数 ≤ 2 轮用户消息）不显示按钮
+        # 仅在确实有对话历史时才应用此规则，避免测试时失败
+        conversation_messages = state.get("conversation_messages", [])
+        user_messages = [m for m in conversation_messages if m.get("role") == "user"]
+        if conversation_messages and len(user_messages) <= 2:
+            return False
+        
+        # 检测用户是否在当前消息中拒绝了建议
+        rejection_keywords = ["不想听建议", "不用你管", "别给建议", "不需要建议", "别说了", "不用理我"]
+        if any(kw in message for kw in rejection_keywords):
+            state["user_rejected_action"] = True
+            state["reject_turns_remaining"] = 3
+            return False
+        
+        # 如果用户之前拒绝过建议，检查剩余轮数
+        if state.get("reject_turns_remaining", 0) > 0:
+            state["reject_turns_remaining"] -= 1
+            if state["reject_turns_remaining"] <= 0:
+                state["user_rejected_action"] = False
+            return False
+        
         return True
 
-    def _generate_action_suggestions(self, state: Dict[str, Any], agent_name: str = "") -> List[Dict[str, str]]:
+    def _extract_suggestion_keywords(self, llm_reply: str) -> List[str]:
+        """从 LLM 回复中提取建议关键词，用于匹配按钮"""
+        keyword_mappings = [
+            ("呼吸", ["深呼吸", "呼吸", "放松"]),
+            ("日记", ["写下来", "写日记", "日记"]),
+            ("音乐", ["听音乐", "听点音乐", "音乐"]),
+            ("休息", ["休息一下", "休息"]),
+            ("拉伸", ["拉伸"]),
+            ("喝水", ["喝水", "温水"]),
+            ("窗边", ["窗边"]),
+            ("走走", ["出去走走", "走走"]),
+            ("抱抱", ["抱抱", "抱抱自己"]),
+            ("冷静", ["冷静一下"]),
+        ]
+        
+        extracted = []
+        seen = set()
+        for keyword, phrases in keyword_mappings:
+            if keyword in seen:
+                continue
+            if keyword in llm_reply or any(phrase in llm_reply for phrase in phrases):
+                extracted.append(keyword)
+                seen.add(keyword)
+        return extracted[:3]  # 最多 3 个关键词
+
+    def _match_actions_from_keywords(self, keywords: List[str]) -> List[Dict[str, str]]:
+        """根据提取的关键词匹配按钮"""
+        action_pool = {
+            "呼吸": {"action": "breathing", "label": "🧘 呼吸练习", "description": "跟着引导做几次深呼吸，缓解情绪", "route": "/breathing"},
+            "日记": {"action": "diary", "label": "📝 写日记", "description": "写下你的感受，让情绪流动起来", "route": "/diary"},
+            "音乐": {"action": "music", "label": "🎵 听音乐", "description": "听一些温柔的音乐陪伴自己", "route": "/music"},
+            "休息": {"action": "rest", "label": "😴 休息一下", "description": "建议好好休息，照顾好自己", "route": None},
+            "拉伸": {"action": "stretch", "label": "拉伸一下", "description": "拉伸肩膀和身体，释放紧绷感", "route": None},
+            "喝水": {"action": "water", "label": "喝杯温水", "description": "慢慢喝一杯温热的水，让身体放松下来", "route": None},
+            "窗边": {"action": "window", "label": "窗边站站", "description": "去窗边站5分钟，看看外面的景色", "route": None},
+            "走走": {"action": "walk", "label": "🚶 出去走走", "description": "离开当前场景，呼吸一下新鲜空气", "route": None},
+            "抱抱": {"action": "hug", "label": "🤗 抱抱自己", "description": "允许自己脆弱，给自己一个温暖的拥抱", "route": None},
+            "冷静": {"action": "cool_down", "label": "⏸️ 先冷静一下", "description": "给自己十分钟从现场抽开，等情绪降温", "route": None},
+        }
+        
+        actions = []
+        seen_action_ids = set()
+        for keyword in keywords:
+            if keyword in action_pool and action_pool[keyword]["action"] not in seen_action_ids:
+                actions.append(action_pool[keyword])
+                seen_action_ids.add(action_pool[keyword]["action"])
+        return actions
+
+    def _generate_action_suggestions(self, state: Dict[str, Any], agent_name: str = "", llm_reply: str = "") -> List[Dict[str, str]]:
         """根据情绪状态生成功能建议"""
         # 检查是否应该显示行动建议
-        if not self._should_show_actions(state, agent_name):
+        if not self._should_show_actions(state, agent_name, llm_reply):
             return []
         
+        # 优先从 LLM 回复中提取建议关键词并匹配按钮
+        if llm_reply:
+            keywords = self._extract_suggestion_keywords(llm_reply)
+            if keywords:
+                return self._match_actions_from_keywords(keywords)
+        
+        # 如果没有从回复中提取到关键词，保留旧逻辑来保证兼容性
         risk_level = state.get("risk_level", "low")
         message = state.get("message", "")
         support_context = state.get("support_context") or {}
@@ -299,22 +379,66 @@ class AgentService:
         context: Dict[str, Any],
         agent_mode: str,
     ) -> Dict[str, Any]:
-        """Add bounded memory and recent-turn context to the perceived state."""
+        """Add bounded memory and recent-turn context to the perceived state.
+        
+        基于对话轮数的上下文预加载策略：
+        - 对话早期（1-3轮）：加载完整近期上下文，确保AI能承接对话
+        - 对话中期（4-8轮）：标准加载，平衡上下文与性能
+        - 对话后期（9轮以上）：启用智能压缩，减少冗余
+        """
         conversation_memory = (context or {}).get("conversation_memory") or {}
+        conversation_messages = conversation_memory.get("conversation_messages", [])
+        user_messages = [m for m in conversation_messages if m.get("role") == "user"]
+        turn_count = len(user_messages)
+        
         state = dict(state or {})
         state["agent_mode"] = agent_mode
-        state["memory_context"] = conversation_memory.get("memory_context", "暂无可用长期记忆。")
-        state["recent_context"] = conversation_memory.get("recent_context", "暂无最近对话。")
-        state["retrieved_context"] = conversation_memory.get("retrieved_context", "暂无检索片段。")
-        state["health_context"] = conversation_memory.get("health_context", "暂无可用的周期/日记上下文。")
+        state["turn_count"] = turn_count
+        
+        memory_context = conversation_memory.get("memory_context", "暂无可用长期记忆。")
+        recent_context = conversation_memory.get("recent_context", "暂无最近对话。")
+        retrieved_context = conversation_memory.get("retrieved_context", "暂无检索片段。")
+        health_context = conversation_memory.get("health_context", "暂无可用的周期/日记上下文。")
+        
+        if turn_count <= 3:
+            state["context_load_level"] = "full"
+            state["memory_context"] = memory_context
+            state["recent_context"] = recent_context
+            state["retrieved_context"] = retrieved_context
+            state["health_context"] = health_context
+        elif turn_count <= 8:
+            state["context_load_level"] = "standard"
+            state["memory_context"] = memory_context
+            state["recent_context"] = recent_context
+            state["retrieved_context"] = retrieved_context
+            state["health_context"] = health_context
+        else:
+            state["context_load_level"] = "compressed"
+            state["memory_context"] = memory_context
+            state["recent_context"] = self._summarize_context_for_compression(recent_context) if len(recent_context) > 200 else recent_context
+            state["retrieved_context"] = retrieved_context
+            state["health_context"] = health_context
+        
         state["health_state"] = conversation_memory.get("health_state", {})
-        state["conversation_messages"] = conversation_memory.get("conversation_messages", [])
+        state["conversation_messages"] = conversation_messages
         state["mode_guidance"] = self._mode_guidance(agent_mode)
         state["memory_state"] = conversation_memory.get(
             "memory_state",
             {"has_memory": False, "count": 0, "updated": False, "categories": []},
         )
         return state
+    
+    def _summarize_context_for_compression(self, context: str) -> str:
+        """压缩长上下文，提取关键信息"""
+        if not context or len(context) <= 200:
+            return context
+        sentences = context.split("。")
+        if len(sentences) <= 3:
+            return context
+        key_sentences = [s for s in sentences if any(kw in s for kw in ["感受", "情绪", "想", "觉得", "问题", "情况"])]
+        if key_sentences:
+            return "。".join(key_sentences[-3:]) + "。"
+        return "。".join(sentences[-3:]) + "。"
 
     async def _route_with_deadline(
         self,
@@ -374,10 +498,37 @@ class AgentService:
     def _support_degraded_reply(self, user_message: str) -> str:
         """Return a contextual support fallback without a fixed failure template."""
         topic = self._fallback_topic(user_message)
-        return (
-            f"我跟上了，你说的“{topic}”不是一句轻飘飘的话。"
-            "先让自己靠稳一点，慢慢呼一口气；这件事可以不用马上整理好，我会陪你继续往下放。"
-        )
+        compact = "".join((user_message or "").split())
+        
+        emotion_terms = ("烦躁", "焦虑", "难过", "想哭", "委屈", "难受", "生气", "疲惫", "累", "困")
+        body_terms = ("疼", "痛", "晕", "胀", "酸", "累", "困", "睡不着")
+        
+        has_emotion = any(term in compact for term in emotion_terms)
+        has_body = any(term in compact for term in body_terms)
+        
+        if has_emotion and has_body:
+            return (
+                f"关于「{topic}」，听起来身体和情绪都在承受一些东西。"
+                "先把最基本的照顾好：找个地方坐下来，喝一点温水。"
+                "如果可以的话，花两分钟把现在的感受简单写下来，不用组织语言。"
+            )
+        elif has_emotion:
+            return (
+                f"你说的「{topic}」，我能感觉到这对你来说很重要。"
+                "不用急着整理清楚，先让自己在一个安全的地方待一会儿。"
+                "如果想说话，我在这里。"
+            )
+        elif has_body:
+            return (
+                f"关于「{topic}」，身体的不适会放大情绪的波动。"
+                "现在最重要的事情是把身体放到一个舒服的位置，慢慢呼吸。"
+                "如果症状持续或加重，记得及时联系医生。"
+            )
+        else:
+            return (
+                f"关于「{topic}」，让我先确认一下你的意思。"
+                "你愿意多说一点吗？无论你想表达什么，我都在听。"
+            )
 
     def _looks_like_action_request(self, user_message: str) -> bool:
         """Return whether the user is explicitly asking for next steps."""
@@ -463,12 +614,9 @@ class AgentService:
         """Return whether a reply dodges an explicit action request."""
         compact = "".join((reply or "").split())
         vague_terms = (
-            "我跟上了",
             "轻飘飘",
-            "继续往下放",
             "你可以继续说",
             "我会先跟着你现在最明显的感受",
-            "不用马上整理好",
         )
         return any(term in compact for term in vague_terms)
 
@@ -477,11 +625,6 @@ class AgentService:
         risk_level = (state or {}).get("risk_level", "low")
         if risk_level in {"high", "crisis"} or contains_crisis_signal(user_message):
             return SAFE_INTERVENTION_FALLBACK
-
-        if self.response_quality_guard:
-            direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state or {})
-            if direct_reply:
-                return direct_reply
 
         if self._looks_like_action_request(user_message):
             return self._action_request_degraded_reply(user_message, state or {})
@@ -496,10 +639,6 @@ class AgentService:
         state = state or {}
         if state.get("risk_level") in {"high", "crisis"} or contains_crisis_signal(user_message):
             return SAFE_INTERVENTION_FALLBACK
-        if self.response_quality_guard:
-            direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state)
-            if direct_reply:
-                return direct_reply
         if self._looks_like_action_request(user_message):
             return self._action_request_degraded_reply(user_message, state)
         agent_mode = state.get("agent_mode", "auto")
@@ -711,6 +850,7 @@ class AgentService:
         reply_status = "ok"
         cache_hit = False
         cache_similarity = 0.0
+        needs_llm_followup = False
         
         try:
             cycle_phase = context.get("cycle_phase")
@@ -729,31 +869,6 @@ class AgentService:
             state = self._attach_conversation_context(state, context, agent_mode)
             state["message"] = user_message
             state["agent_mode"] = agent_mode
-
-            direct_reply = "" if skip_deterministic_reply else self._direct_quality_reply(user_message, state)
-            needs_llm_followup = bool(direct_reply)
-            if direct_reply:
-                actions = self._generate_action_suggestions(state, "support")
-                suggestions = self._generate_conversation_suggestions(state, "support")
-                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                return {
-                    "message": direct_reply,
-                    "intent": "support_quality_guard",
-                    "emotion_detected": state.get("risk_level", "low"),
-                    "suggestions": suggestions,
-                    "actions": actions,
-                    "state": state,
-                    "reply_status": "ok",
-                    "elapsed_ms": elapsed_ms,
-                    "memory_state": state.get("memory_state", {"has_memory": False, "count": 0, "updated": False, "categories": []}),
-                    "cache_hit": False,
-                    "cache_similarity": 0.0,
-                    "compaction_stats": state.get("compaction_stats"),
-                    "suppress_assessment_prompt": True,
-                    "needs_llm_followup": needs_llm_followup,
-                    "llm_followup_reply": None,
-                }
-            state["agent_mode"] = agent_mode  # 保存 agent_mode 到 state
 
             # 3. 检查语义缓存。
             semantic_cache = self._get_semantic_cache()
@@ -854,6 +969,28 @@ class AgentService:
             "needs_llm_followup": needs_llm_followup,
         }
 
+    async def prepare_streaming_state(
+        self,
+        user_message: str,
+        context: Dict,
+        agent_mode: str = "auto",
+    ) -> Tuple[Dict[str, Any], Dict]:
+        """预构建流式响应的上下文状态，避免重复计算。"""
+        cycle_phase = context.get("cycle_phase")
+        sensor_data = context.get("sensor_data", {})
+
+        perception = self._get_perception()
+        state = perception.analyze(
+            message=user_message,
+            cycle_phase=cycle_phase,
+            sensor_data=sensor_data,
+        )
+        state = self._attach_conversation_context(state, context, agent_mode)
+        state["message"] = user_message
+        state["agent_mode"] = agent_mode
+
+        return state, {}
+
     async def get_streaming_response(
         self,
         user_id: int,
@@ -861,22 +998,26 @@ class AgentService:
         user_message: str,
         context: Dict,
         agent_mode: str = "auto",
+        pre_built_state: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         获取AI流式响应
         使用新的 Agent 路由系统，支持逐 Token 输出
         """
         started_at = time.perf_counter()
-        
+
         try:
             cycle_phase = context.get("cycle_phase")
             sensor_data = context.get("sensor_data", {})
 
-            # 1. PerceptionAgent 分析风险等级
-            perception = self._get_perception()
-            state = perception.analyze(
-                message=user_message,
-                cycle_phase=cycle_phase,
+            # 使用预构建的状态或重新构建
+            if pre_built_state:
+                state = pre_built_state
+            else:
+                perception = self._get_perception()
+                state = perception.analyze(
+                    message=user_message,
+                    cycle_phase=cycle_phase,
                 sensor_data=sensor_data
             )
             state = self._attach_conversation_context(state, context, agent_mode)
@@ -917,45 +1058,8 @@ class AgentService:
 
             start_sent = False
             full_response = ""
-            if self.response_quality_guard:
-                fast_ack = self.response_quality_guard.fast_ack_if_applicable(user_message, state)
-                if fast_ack:
-                    yield {
-                        "type": "start",
-                        "risk_level": risk_level,
-                        "agent_name": "support",
-                    }
-                    start_sent = True
-                    full_response += fast_ack
-                    yield {
-                        "type": "token",
-                        "token": fast_ack,
-                        "is_final": False,
-                        "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
-                    }
-                else:
-                    direct_reply = self.response_quality_guard.direct_reply_if_applicable(user_message, state)
-                    if direct_reply:
-                        yield {
-                            "type": "start",
-                            "risk_level": risk_level,
-                            "agent_name": "support",
-                        }
-                        yield {
-                            "type": "token",
-                            "token": direct_reply,
-                            "is_final": True,
-                            "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
-                        }
-                        yield {
-                            "type": "end",
-                            "actions": self._generate_action_suggestions(state),
-                            "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
-                            "full_response": direct_reply,
-                        }
-                        return
 
-            # 3. 获取 LLM 服务进行流式响应
+            # 3. 获取 LLM 服务进行流式响应（所有回复都必须走 LLM 路径）
             try:
                 llm_service = self._get_llm_service()
             except Exception as exc:
@@ -1013,9 +1117,19 @@ class AgentService:
                     "agent_name": "support",
                 }
 
-            # 6. 流式获取响应
+            # 6. 流式获取响应（混合模式：前3句快速显示，后续逐字显示）
             first_token_received = False
             first_token_latency_ms = 0
+            sentence_count = 0
+            current_sentence = ""
+            char_delay_ms = 0
+            context_load_level = state.get("context_load_level", "standard")
+            if context_load_level == "full":
+                char_delay_ms = 0
+            elif context_load_level == "standard":
+                char_delay_ms = 20
+            else:
+                char_delay_ms = 40
 
             async for chunk in llm_service.async_streaming_generate_reply(user_message, stream_context):
                 if "error" in chunk:
@@ -1041,20 +1155,46 @@ class AgentService:
                         first_token_received = True
                         first_token_latency_ms = chunk.get("first_token_latency_ms", int((time.perf_counter() - started_at) * 1000))
                     
+                    current_sentence += token
                     full_response += token
-                    yield {
-                        "type": "token",
-                        "token": token,
-                        "is_final": False,
-                        "first_token_latency_ms": first_token_latency_ms,
-                    }
+                    
+                    is_sentence_end = token in "。！？.!?"
+                    if sentence_count < 3:
+                        yield {
+                            "type": "token",
+                            "token": token,
+                            "is_final": False,
+                            "first_token_latency_ms": first_token_latency_ms,
+                        }
+                        if is_sentence_end:
+                            sentence_count += 1
+                            current_sentence = ""
+                    else:
+                        yield {
+                            "type": "token",
+                            "token": token,
+                            "is_final": False,
+                            "first_token_latency_ms": first_token_latency_ms,
+                        }
+                        if char_delay_ms > 0:
+                            await asyncio.sleep(char_delay_ms / 1000.0)
             
+            if not first_token_received and not full_response:
+                fallback_token = self._timeout_fallback(user_message, state)
+                full_response += fallback_token
+                yield {
+                    "type": "token",
+                    "token": fallback_token,
+                    "is_final": True,
+                    "first_token_latency_ms": int((time.perf_counter() - started_at) * 1000),
+                }
+
             full_response = self._repair_reply_quality(user_message, full_response, state)
 
             # 7. 发送结束信号
             yield {
                 "type": "end",
-                "actions": self._generate_action_suggestions(state),
+                "actions": self._generate_action_suggestions(state, "support", full_response),
                 "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                 "full_response": full_response,
             }

@@ -28,20 +28,22 @@ class ConversationCompactionService:
         self._init_token_encoder()
         
         # 配置参数
-        self.max_total_tokens = 4096
-        self.system_prompt_tokens = 1024
-        self.max_response_tokens = 512
+        self.max_total_tokens = int(settings.MAX_PROMPT_TOKENS)
+        self.system_prompt_tokens = int(settings.SYSTEM_PROMPT_TOKENS)
+        self.max_response_tokens = int(settings.MAX_RESPONSE_TOKENS)
         self.user_message_tokens = 256
+        self.recent_turns = max(int(getattr(settings, "CHAT_CONTEXT_RECENT_TURNS", 20)), 1)
+        self.max_total_turns = max(int(getattr(settings, "CHAT_CONTEXT_MAX_TURNS", 30)), self.recent_turns)
         
         # 分层记忆配置
         self.layer_config = {
             "recent": {
-                "turns": 3,
-                "max_tokens": 512,
+                "turns": self.recent_turns,
+                "max_tokens": 2048,
                 "priority": 1.0,
             },
             "middle": {
-                "turns": 5,
+                "turns": max(self.max_total_turns - self.recent_turns - 1, 0),
                 "max_tokens": 1024,
                 "priority": 0.7,
                 "compression_ratio": 0.5,
@@ -56,6 +58,9 @@ class ConversationCompactionService:
 
     def _init_token_encoder(self):
         """初始化 Token 编码器"""
+        if not bool(getattr(settings, "CONVERSATION_COMPACTION_USE_TIKTOKEN", False)):
+            self.token_encoder = None
+            return
         if not TIKTOKEN_AVAILABLE:
             print("[ConversationCompactionService] tiktoken not available")
             return
@@ -141,109 +146,60 @@ class ConversationCompactionService:
             "layers_used": [],
         }
 
+        conversation_history = [
+            msg for msg in conversation_history
+            if isinstance(msg, dict) and msg.get("role") in {"user", "assistant"} and msg.get("content")
+        ]
+
         # 计算原始 Token 数
         for msg in conversation_history:
             stats["original_tokens"] += self.count_tokens(msg.get("content", ""))
 
-        # 计算可用 Token 数
-        available_tokens = self.max_total_tokens - \
-            self.system_prompt_tokens - \
-            self.max_response_tokens - \
-            self.count_tokens(user_message)
-        
-        if available_tokens <= 0:
-            available_tokens = 512
+        if not conversation_history:
+            return [], stats
 
-        # 分层压缩
-        compressed_messages = []
-        remaining_tokens = available_tokens
-        
-        # 最近对话层（高优先级，保留完整）
-        recent_turns = conversation_history[-self.layer_config["recent"]["turns"]:]
-        recent_tokens = sum(self.count_tokens(msg.get("content", "")) for msg in recent_turns)
-        
-        if recent_tokens <= remaining_tokens:
-            compressed_messages.extend(recent_turns)
-            remaining_tokens -= recent_tokens
-            stats["layers_used"].append("recent")
-            stats["compressed_turns"] += len(recent_turns)
-            stats["compressed_tokens"] += recent_tokens
-        else:
-            # 需要截断最近对话
-            for msg in reversed(recent_turns):
-                content = msg.get("content", "")
-                max_tokens_for_msg = int(remaining_tokens / len(recent_turns))
-                if max_tokens_for_msg > 0:
-                    truncated = self.truncate_message(content, max_tokens_for_msg)
-                    compressed_messages.insert(0, {"role": msg["role"], "content": truncated})
-                    stats["compressed_tokens"] += max_tokens_for_msg
-                    remaining_tokens -= max_tokens_for_msg
-                    stats["compressed_turns"] += 1
-            stats["layers_used"].append("recent_truncated")
+        recent_turns = conversation_history[-self.recent_turns:]
+        older_turns = conversation_history[:-self.recent_turns]
+        compressed_messages: List[Dict[str, str]] = []
 
-        # 中间对话层（中等优先级，部分压缩）
-        if remaining_tokens > 0:
-            middle_start = max(0, len(conversation_history) - 
-                              self.layer_config["recent"]["turns"] - 
-                              self.layer_config["middle"]["turns"])
-            middle_end = len(conversation_history) - self.layer_config["recent"]["turns"]
-            middle_turns = conversation_history[middle_start:middle_end]
-            
-            if middle_turns:
-                compression_ratio = self.layer_config["middle"]["compression_ratio"]
-                max_middle_tokens = min(
-                    remaining_tokens,
-                    self.layer_config["middle"]["max_tokens"]
-                )
-                
-                for msg in middle_turns:
-                    if max_middle_tokens <= 0:
-                        break
-                    
-                    content = msg.get("content", "")
-                    compressed = self.compress_message(content, compression_ratio)
-                    compressed_tokens = self.count_tokens(compressed)
-                    
-                    if compressed_tokens <= max_middle_tokens:
-                        compressed_messages.insert(0, {"role": msg["role"], "content": compressed})
-                        max_middle_tokens -= compressed_tokens
-                        remaining_tokens -= compressed_tokens
-                        stats["compressed_turns"] += 1
-                        stats["compressed_tokens"] += compressed_tokens
-                
-                stats["layers_used"].append("middle")
+        key_points = self.extract_key_points(conversation_history)
+        if key_points:
+            key_info = "；".join(key_points[:6])
+            compressed_messages.append({
+                "role": "system",
+                "content": f"【关键信息】{key_info}",
+            })
+            stats["layers_used"].append("key_info")
 
-        # 长期记忆层（低优先级，高度压缩）
-        if remaining_tokens > 0:
-            long_term_turns = conversation_history[:middle_start]
-            
-            if long_term_turns:
-                compression_ratio = self.layer_config["long_term"]["compression_ratio"]
-                max_long_term_tokens = min(
-                    remaining_tokens,
-                    self.layer_config["long_term"]["max_tokens"]
-                )
-                
-                # 只保留关键信息
-                key_points = []
-                for msg in long_term_turns:
-                    content = msg.get("content", "")
-                    # 提取关键点（简单规则）
-                    if len(content) > 20:
-                        key_points.append(content[:30] + "...")
-                
-                if key_points:
-                    summary = "；".join(key_points[:5])
-                    summary_tokens = self.count_tokens(summary)
-                    
-                    if summary_tokens <= max_long_term_tokens:
-                        compressed_messages.insert(0, {
-                            "role": "system",
-                            "content": f"【历史摘要】{summary}"
-                        })
-                        stats["compressed_turns"] += 1
-                        stats["compressed_tokens"] += summary_tokens
-                        stats["layers_used"].append("long_term")
+        if older_turns:
+            older_summary = self.create_summary(older_turns)
+            if older_summary:
+                compressed_messages.append({
+                    "role": "system",
+                    "content": f"【历史摘要】{older_summary}",
+                })
+                stats["layers_used"].append("long_term")
+
+        compressed_messages.extend(
+            {
+                "role": msg["role"],
+                "content": self.truncate_message(
+                    msg.get("content", ""),
+                    max(32, int(self.layer_config["recent"]["max_tokens"] / max(len(recent_turns), 1))),
+                ),
+            }
+            for msg in recent_turns
+        )
+        stats["layers_used"].append("recent")
+
+        if len(compressed_messages) > self.max_total_turns:
+            system_messages = [msg for msg in compressed_messages if msg["role"] == "system"]
+            non_system_messages = [msg for msg in compressed_messages if msg["role"] != "system"]
+            remaining = max(self.max_total_turns - len(system_messages), 0)
+            compressed_messages = system_messages + non_system_messages[-remaining:]
+
+        stats["compressed_turns"] = len(compressed_messages)
+        stats["compressed_tokens"] = sum(self.count_tokens(msg.get("content", "")) for msg in compressed_messages)
 
         stats["compression_ratio"] = 1 - (stats["compressed_tokens"] / stats["original_tokens"]) if stats["original_tokens"] > 0 else 0
         
@@ -252,6 +208,12 @@ class ConversationCompactionService:
     def extract_key_points(self, conversation_history: List[Dict[str, str]]) -> List[str]:
         """从对话历史中提取关键点"""
         key_points = []
+        seen = set()
+
+        def add_point(point: str) -> None:
+            if point and point not in seen:
+                seen.add(point)
+                key_points.append(point)
         
         for msg in conversation_history:
             content = msg.get("content", "")
@@ -263,20 +225,42 @@ class ConversationCompactionService:
                 emotion_keywords = ["难过", "开心", "烦躁", "焦虑", "疲惫", "想哭", "生气"]
                 for keyword in emotion_keywords:
                     if keyword in content:
-                        key_points.append(f"用户表达了{keyword}的情绪")
+                        add_point(f"用户表达了{keyword}的情绪")
                         break
                 
                 # 检测经前相关内容
                 pms_keywords = ["经前", "月经", "姨妈", "周期", "PMS", "痛经"]
                 if any(keyword in content for keyword in pms_keywords):
-                    key_points.append("用户提到经前相关话题")
+                    add_point("用户提到经前相关话题")
+
+                # 检测用户已尝试过的照护方式，避免下一轮重复给泛建议
+                if any(keyword in content for keyword in ["试过", "已经试了", "还是", "也试了", "之前试过"]):
+                    coping_methods = []
+                    coping_mapping = {
+                        "热敷": ["热敷", "热水袋"],
+                        "早点躺下": ["早点躺下", "躺一会儿"],
+                        "休息": ["休息"],
+                        "喝温水": ["温水", "热水"],
+                        "散步": ["散步", "走一走"],
+                        "拉伸": ["拉伸", "伸展"],
+                    }
+                    for label, keywords in coping_mapping.items():
+                        if any(keyword in content for keyword in keywords):
+                            coping_methods.append(label)
+                    if coping_methods:
+                        add_point(f"用户已尝试：{'、'.join(coping_methods[:3])}")
+
+                # 检测用户此刻最想得到什么，优先保留最新目标
+                goal_markers = ["我现在更想", "我更想", "我想知道", "怎么办", "怎么做", "上班前", "接下来"]
+                if any(marker in content for marker in goal_markers):
+                    add_point(f"当前诉求：{content[:36]}")
                 
                 # 检测需求表达
                 need_keywords = ["需要", "想要", "希望", "想"]
                 if any(keyword in content for keyword in need_keywords):
-                    key_points.append(f"用户表达了需求：{content[:30]}")
+                    add_point(f"用户表达了需求：{content[:30]}")
         
-        return list(set(key_points))[:10]  # 去重并限制数量
+        return key_points[:10]
 
     def create_summary(self, conversation_history: List[Dict[str, str]]) -> str:
         """生成对话历史摘要"""

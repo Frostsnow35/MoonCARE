@@ -214,6 +214,10 @@ class ChatMemoryService:
             if music_value:
                 candidates.append(MemoryCandidate("preference", "music_preference", music_value, 0.75))
 
+        comfort_value = self._effective_comfort_value(text, context)
+        if comfort_value:
+            candidates.append(MemoryCandidate("preference", "effective_comfort", comfort_value, 0.72))
+
         if any(term in text for term in ["别一下子给我很多建议", "不要一下子给我很多建议", "少给建议", "一步一步"]):
             candidates.append(MemoryCandidate("preference", "guidance_style", "少量建议、一步一步来", 0.8))
 
@@ -246,6 +250,32 @@ class ChatMemoryService:
         else:
             parts.append("听音乐")
         return "".join(parts)
+
+    def _effective_comfort_value(self, text: str, context: Dict[str, Any]) -> Optional[str]:
+        """Capture user-confirmed soothing actions that help during menstrual discomfort."""
+        compact = "".join((text or "").split())
+        relief_markers = ("舒服一点", "好一点", "缓一点", "有用", "管用", "能缓解")
+        menstrual_markers = ("经期", "来月经", "月经", "姨妈", "痛经", "肚子痛", "肚子疼", "腹痛", "小腹痛")
+        if not any(marker in compact for marker in relief_markers):
+            return None
+        if not any(marker in compact for marker in menstrual_markers) and context.get("cycle_phase") not in {"menstrual", "经期", "月经期"}:
+            return None
+
+        methods = self._matched_terms(
+            text,
+            {
+                "热敷": ["热敷", "热水袋"],
+                "喝温水": ["温水", "热水"],
+                "早点躺下休息": ["早点躺下", "躺一会儿", "休息"],
+                "散步": ["散步", "走一走"],
+                "拉伸": ["拉伸", "伸展"],
+                "慢慢呼吸": ["呼吸", "深呼吸"],
+                "听轻音乐": ["轻音乐", "舒缓音乐"],
+            },
+        )
+        if not methods:
+            return None
+        return f"经期不舒服时，{methods[0]}会让她舒服一点"
 
     def _premenstrual_pattern_value(self, text: str) -> Optional[str]:
         """Summarize PMS-adjacent self-observation without diagnostic wording."""

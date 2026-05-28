@@ -150,9 +150,32 @@ class KnowledgeAgent:
 
         return keyword_scored
 
+    def _format_conversation_messages(self, conversation_messages: list) -> str:
+        """Format conversation history into a readable string for LLM."""
+        if not conversation_messages:
+            return "暂无历史对话。"
+        
+        formatted = []
+        for idx, msg in enumerate(conversation_messages, 1):
+            role = msg.get("role", "")
+            content = msg.get("content", "").strip()
+            if not content:
+                continue
+            
+            role_label = "用户" if role == "user" else "你"
+            formatted.append(f"{idx}. {role_label}：{content}")
+        
+        if not formatted:
+            return "暂无历史对话。"
+        
+        return "\n".join(formatted)
+
     def _prompt_context(self, state: dict[str, Any] | None = None) -> dict[str, Any]:
         """Build common prompt fields for knowledge responses."""
         state = state or {}
+        formatted_conversation_history = self._format_conversation_messages(
+            state.get("conversation_messages", [])
+        )
         return {
             "cycle_phase": state.get("cycle_phase", "未知"),
             "risk_level": state.get("risk_level", "low"),
@@ -160,6 +183,7 @@ class KnowledgeAgent:
             "health_context": state.get("health_context", "暂无可用的周期/日记上下文。"),
             "recent_context": state.get("recent_context", "暂无最近对话。"),
             "retrieved_context": state.get("retrieved_context", "暂无检索片段。"),
+            "formatted_conversation_history": formatted_conversation_history,
             "conversation_messages": state.get("conversation_messages", []),
             "mode_guidance": state.get("mode_guidance", ""),
         }
@@ -248,9 +272,26 @@ class KnowledgeAgent:
         best = top_k[0][1]
         question = best.get("question", "")
         answer = best.get("answer", "")
+        if self._card_requires_safety_rewrite(question, answer):
+            return self._cautious_fallback_answer(question or answer)
         if "仅供参考" not in answer:
             answer = f"{answer.rstrip('。')}。以上仅供参考。"
         return f"关于“{question}”：{answer}"
+
+    def _card_requires_safety_rewrite(self, question: str, answer: str) -> bool:
+        """Return whether a local card should be rewritten into a safer bounded answer."""
+        text = f"{question} {answer}"
+        risky_markers = (
+            "布洛芬",
+            "避孕药",
+            "激素治疗",
+            "手术",
+            "子宫内膜异位症",
+            "抗抑郁药",
+            "抗焦虑药",
+        )
+        severe_markers = ("受不了", "疼得厉害", "痛得厉害", "剧烈", "严重痛经")
+        return any(marker in text for marker in risky_markers) or any(marker in question for marker in severe_markers)
 
     def _answer_from_llm(self, message: str, state: dict[str, Any] | None = None) -> str:
         """Use the fallback prompt when no local card matches the question."""
@@ -263,9 +304,33 @@ class KnowledgeAgent:
             logger.exception("[KnowledgeAgent] LLM fallback failed: %s", exc)
             return self._cautious_fallback_answer(message, state)
 
+    def _relationship_irritability_fallback(
+        self,
+        message: str,
+        state: dict[str, Any] | None = None,
+    ) -> str:
+        """Return a contextual no-model answer for relationship irritability."""
+        compact = "".join((message or "").split())
+        context_text = "".join(
+            f"{(state or {}).get('recent_context', '')} {(state or {}).get('retrieved_context', '')}".split()
+        )
+        relationship_text = f"{compact}{context_text}"
+        if not any(term in relationship_text for term in ("男朋友", "伴侣", "对象", "亲密关系")):
+            return ""
+        if not any(term in relationship_text for term in ("烦", "烦躁", "易怒", "生气", "吵架", "讲几句话")):
+            return ""
+        return (
+            "经前阶段有些人会更容易被压力、睡眠不足、身体不适和激素波动一起影响，"
+            "所以在亲密关系里，对方几句话可能会被放大成更明显的烦躁或委屈；这不是“矫情”，也不等于诊断。"
+            "可以先暂停回复十分钟，把最触发你的那句话写下来，等情绪降一点再决定要不要沟通。以上仅供参考。"
+        )
+
     def _cautious_fallback_answer(self, message: str, state: dict[str, Any] | None = None) -> str:
         """Return a non-diagnostic PMS knowledge answer when generation fails."""
         compact = "".join((message or "").split())
+        relationship_reply = self._relationship_irritability_fallback(message, state)
+        if relationship_reply:
+            return relationship_reply
         if "头晕" in compact:
             return (
                 "经期头晕可能和疼痛、睡眠不足、进食少、出血量变化、贫血风险或身体紧张叠在一起有关。"
@@ -273,8 +338,9 @@ class KnowledgeAgent:
                 "以上仅供参考。"
             )
         if any(term in compact for term in ("肚子疼", "肚子痛", "腹痛", "痛经", "小腹痛")):
+            pain_label = "痛经" if "痛经" in compact else "经期腹痛"
             return (
-                "经期腹痛常见原因之一是子宫收缩带来的不适，也可能被睡眠、压力和受凉感放大。"
+                f"{pain_label}常见原因之一是子宫收缩带来的不适，也可能被睡眠、压力和受凉感放大。"
                 "可以先热敷小腹、放慢活动强度；如果疼痛剧烈、和平时明显不同或伴随异常出血，建议咨询医生。以上仅供参考。"
             )
         return (
@@ -288,6 +354,9 @@ class KnowledgeAgent:
         """Return a PMS or menstrual-health knowledge answer with cautious fallback."""
         matching_cards = self._select_matching_cards(message)
         if self.llm is None:
+            relationship_reply = self._relationship_irritability_fallback(message, state)
+            if relationship_reply:
+                return relationship_reply
             if matching_cards:
                 return self._answer_directly_from_cards(matching_cards)
             return self._cautious_fallback_answer(message, state)
@@ -312,12 +381,17 @@ class KnowledgeAgent:
         """Stream a menstrual-health knowledge answer with the same RAG selection."""
         matching_cards = self._select_matching_cards(message)
         if self.llm is None:
-            yield {
-                "token": (
+            relationship_reply = self._relationship_irritability_fallback(message, state)
+            fallback_text = (
+                relationship_reply
+                or (
                     self._answer_directly_from_cards(matching_cards)
                     if matching_cards
                     else self._cautious_fallback_answer(message, state)
-                ),
+                )
+            )
+            yield {
+                "token": fallback_text,
                 "is_first": True,
                 "first_token_latency_ms": 0,
             }
