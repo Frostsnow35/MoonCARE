@@ -75,7 +75,8 @@ export const menstrualAPI = {
   getRecords: (params) => api.get('/menstrual/records', { params }),
   predict: () => api.get('/menstrual/predict'),
   updateRecord: (id, data) => api.put(`/menstrual/record/${id}`, data),
-  deleteRecord: (id) => api.delete(`/menstrual/record/${id}`)
+  deleteRecord: (id) => api.delete(`/menstrual/record/${id}`),
+  checkIrregularity: () => api.get('/menstrual/irregularity')
 }
 
 export const diaryAPI = {
@@ -83,8 +84,15 @@ export const diaryAPI = {
   today: () => api.get('/diary/today'),
   list: (params) => api.get('/diary', { params }),
   get: (id) => api.get(`/diary/${id}`),
-  update: (id, data) => api.put(`/diary/${id}`, data),
-  delete: (id) => api.delete(`/diary/${id}`)
+  update: (id, data, options = {}) => {
+    const params = options.skip_nlp ? { skip_nlp: options.skip_nlp } : {}
+    return api.put(`/diary/${id}`, data, { params })
+  },
+  delete: (id) => api.delete(`/diary/${id}`),
+  saveDraft: (data) => api.post('/diary/draft', data),
+  getDraft: () => api.get('/diary/draft'),
+  deleteDraft: () => api.delete('/diary/draft'),
+  publishDraft: () => api.post('/diary/draft/publish')
 }
 
 export const chatAPI = {

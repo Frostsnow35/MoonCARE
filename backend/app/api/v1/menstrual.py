@@ -164,6 +164,23 @@ async def update_menstrual_record(
     if not existing:
         raise HTTPException(status_code=404, detail="记录不存在")
 
+    # Check date overlap with other records (excluding current record)
+    new_start = record.start_date
+    new_end = record.end_date or record.start_date
+
+    overlapping = db.query(MenstrualRecord).filter(
+        MenstrualRecord.user_id == user_id,
+        MenstrualRecord.id != record_id,
+        MenstrualRecord.start_date <= new_end,
+        MenstrualRecord.end_date >= new_start,
+    ).first()
+
+    if overlapping:
+        raise HTTPException(
+            status_code=400,
+            detail="该日期范围与其他记录重叠"
+        )
+
     # Update fields
     existing.start_date = record.start_date
     existing.end_date = record.end_date
@@ -205,3 +222,17 @@ async def delete_menstrual_record(
     db.commit()
 
     return {"status": "success", "msg": "记录已删除"}
+
+
+@router.get("/irregularity")
+async def check_cycle_irregularity(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    检查周期是否极度不规律
+    方差 > 7天² 时提示警告
+    """
+    predictor = CyclePredictor(db)
+    result = predictor.check_irregularity(user_id)
+    return result

@@ -190,22 +190,33 @@ class CyclePredictor:
         ).order_by(MenstrualRecord.start_date).all()
 
         if len(records) < 2:
-            return {"is_irregular": False, "variance": 0, "warning": None}
+            return {"is_irregular": False, "variance": 0, "warning": None, "reasons": []}
 
         lengths = self._calculate_cycle_lengths(records)
 
         if len(lengths) < 2:
-            return {"is_irregular": False, "variance": 0, "warning": None}
+            return {"is_irregular": False, "variance": 0, "warning": None, "reasons": []}
 
         mean = sum(lengths) / len(lengths)
         variance = sum((x - mean) ** 2 for x in lengths) / len(lengths)
 
         warning = None
+        reasons = []
         if variance > 49:  # 7 days squared
             warning = "您的周期波动较大，预测仅供参考"
+            reasons.append(warning)
+
+        if lengths:
+            short_cycles = [l for l in lengths if l < 21]
+            long_cycles = [l for l in lengths if l > 35]
+            if short_cycles:
+                reasons.append(f"有 {len(short_cycles)} 次周期时长低于21天")
+            if long_cycles:
+                reasons.append(f"有 {len(long_cycles)} 次周期时长超过35天")
 
         return {
-            "is_irregular": variance > 49,
+            "is_irregular": variance > 49 or len(reasons) > 0,
             "variance": round(variance, 2),
-            "warning": warning
+            "warning": warning,
+            "reasons": reasons
         }

@@ -32,5 +32,6 @@ class User(Base):
     biometric_data = relationship("BiometricData", back_populates="user", cascade="all, delete-orphan")
     menstrual_records = relationship("MenstrualRecord", back_populates="user", cascade="all, delete-orphan")
     mood_diaries = relationship("MoodDiary", back_populates="user", cascade="all, delete-orphan")
+    diary_drafts = relationship("DiaryDraft", back_populates="user", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
     chat_memories = relationship("ChatMemory", back_populates="user", cascade="all, delete-orphan")

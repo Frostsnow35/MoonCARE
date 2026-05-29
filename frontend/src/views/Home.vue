@@ -73,20 +73,27 @@
       <!-- Quick Actions -->
       <div class="px-4 mt-6">
         <div class="bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl p-4">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-3 gap-3">
+            <router-link
+              to="/diary"
+              class="flex flex-col items-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform"
+            >
+              <span class="text-2xl">📝</span>
+              <span class="text-xs font-semibold text-gray-700">今日日记</span>
+            </router-link>
             <router-link
               to="/music"
               class="flex flex-col items-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform"
             >
-              <span class="text-3xl">🎵</span>
-              <span class="text-sm font-semibold text-gray-700">音乐疗愈</span>
+              <span class="text-2xl">🎵</span>
+              <span class="text-xs font-semibold text-gray-700">音乐疗愈</span>
             </router-link>
             <router-link
               to="/breathing"
               class="flex flex-col items-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform"
             >
-              <span class="text-3xl">🌬️</span>
-              <span class="text-sm font-semibold text-gray-700">呼吸引导</span>
+              <span class="text-2xl">🌬️</span>
+              <span class="text-xs font-semibold text-gray-700">呼吸引导</span>
             </router-link>
           </div>
         </div>

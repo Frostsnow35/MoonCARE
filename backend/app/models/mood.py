@@ -37,3 +37,22 @@ class MoodDiary(Base):
 
     # Relationship
     user = relationship("User", back_populates="mood_diaries")
+
+
+class DiaryDraft(Base):
+    __tablename__ = "diary_drafts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # Draft content
+    content = Column(Text, nullable=True)
+    emotion_tags = Column(JSON, nullable=True)
+    mood_level = Column(Float, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationship
+    user = relationship("User", back_populates="diary_drafts")

@@ -41,3 +41,21 @@ class MoodDiaryResponse(BaseModel):
 class MoodDiaryListResponse(BaseModel):
     diaries: List[MoodDiaryResponse]
     total: int
+
+
+class DiaryDraftCreate(BaseModel):
+    content: Optional[str] = None
+    emotion_tags: Optional[List[str]] = None
+    mood_level: Optional[float] = None
+
+
+class DiaryDraftResponse(BaseModel):
+    id: int
+    content: Optional[str]
+    emotion_tags: Optional[List[str]]
+    mood_level: Optional[float]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

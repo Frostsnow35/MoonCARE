@@ -29,6 +29,11 @@
           <div class="text-xs text-gray-600">{{ currentPhaseDescription }}</div>
         </div>
 
+        <div v-if="irregularity.is_irregular" class="bg-yellow-50 border border-yellow-200 rounded-lg p-2.5 text-xs text-yellow-700">
+          <div class="font-medium mb-0.5">周期异常提示</div>
+          <div>{{ irregularity.reasons?.join('，') || '检测到周期规律可能存在异常，建议关注身体变化，必要时咨询医生。' }}</div>
+        </div>
+
         <div v-if="prediction?.predicted_start" class="space-y-1.5 bg-white/50 rounded-lg p-3">
           <div class="flex justify-between items-center">
             <span class="text-gray-600 text-xs">下次月经预计</span>
@@ -95,6 +100,7 @@
                 :key="index"
                 class="aspect-square flex flex-col items-center justify-center rounded-lg text-xs relative"
                 :class="getDayClass(day)"
+                @click="day > 0 ? onCalendarDayClick(day) : null"
               >
                 <span>{{ day > 0 ? day : '' }}</span>
                 <span v-if="day > 0 && isPeriodDay(day)" class="absolute bottom-0.5 w-1 h-1 rounded-full bg-red-400"></span>
@@ -123,6 +129,13 @@
                 <div class="text-xs text-gray-500 mb-1">下次月经预计</div>
                 <div class="text-lg font-bold text-pink-600">{{ formatDate(prediction.predicted_start) }}</div>
                 <div class="text-sm text-pink-500 mt-1">{{ daysUntilNextPeriod }} 天后</div>
+                <div
+                  class="text-xs mt-2"
+                  :class="confidenceColorClass"
+                  :title="confidenceTooltip"
+                >
+                  预测置信度：{{ confidenceLabel }}
+                </div>
               </div>
               <div v-else class="bg-gray-50 rounded-xl p-4 text-sm text-gray-500">
                 暂无足够记录，先补充历史周期。
@@ -150,7 +163,13 @@
                       {{ formatDate(record.start_date) }}
                       <span v-if="record.end_date" class="text-gray-400 font-normal">~ {{ formatDate(record.end_date) }}</span>
                     </div>
-                    <div v-if="record.duration" class="text-xs text-gray-500">持续 {{ record.duration }} 天</div>
+                    <div v-if="record.duration" class="text-xs text-gray-500">
+                      持续 {{ record.duration }} 天
+                      <span
+                        v-if="record.duration < 21 || record.duration > 35"
+                        class="ml-1 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-[10px]"
+                      >异常时长</span>
+                    </div>
                     <div class="flex gap-2 mt-1">
                       <button type="button" class="text-xs text-pink-500" @click="startEditRecord(record)">编辑</button>
                       <button
@@ -177,8 +196,40 @@
                     {{ symptom }}
                   </span>
                 </div>
+
+                <div v-if="record.notes" class="mt-1.5 text-xs text-gray-500 italic">
+                  {{ record.notes }}
+                </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="showDeleteConfirm"
+        class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+        @click.self="cancelDelete"
+      >
+        <div class="bg-white rounded-xl w-full max-w-sm p-5 animate-fadeIn">
+          <h3 class="text-base font-semibold text-gray-800 mb-2">确认删除</h3>
+          <p class="text-sm text-gray-600">确定删除这条周期记录吗？此操作不可恢复。</p>
+          <div class="flex gap-2 mt-4">
+            <button
+              type="button"
+              @click="cancelDelete"
+              class="flex-1 py-2 rounded-lg text-gray-600 bg-gray-100 text-sm"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              @click="confirmDelete"
+              :disabled="deletingRecordId === recordToDelete?.id"
+              class="flex-1 py-2 rounded-lg text-white font-medium text-sm disabled:bg-gray-300 bg-red-500 hover:bg-red-600"
+            >
+              {{ deletingRecordId === recordToDelete?.id ? '删除中...' : '删除' }}
+            </button>
           </div>
         </div>
       </div>
@@ -246,6 +297,16 @@
               </div>
             </div>
 
+            <div>
+              <label class="block text-xs text-gray-600 mb-1">备注（选填）</label>
+              <textarea
+                v-model="recordForm.notes"
+                rows="2"
+                placeholder="可补充其他感受或说明..."
+                class="w-full p-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-pink-200 focus:border-pink-400 outline-none text-sm resize-none"
+              ></textarea>
+            </div>
+
             <p v-if="formError" class="text-xs text-red-500">{{ formError }}</p>
           </div>
 
@@ -278,6 +339,8 @@ import BottomNav from '../components/BottomNav.vue'
 const records = ref([])
 const prediction = ref(null)
 const showRecordModal = ref(false)
+const showDeleteConfirm = ref(false)
+const recordToDelete = ref(null)
 const isSubmitting = ref(false)
 const deletingRecordId = ref(null)
 const editingRecordId = ref(null)
@@ -285,6 +348,7 @@ const activeTab = ref('calendar')
 const formError = ref('')
 const toastMessage = ref('')
 const toastType = ref('success')
+const irregularity = ref({ is_irregular: false, reasons: [] })
 
 const tabs = [
   { id: 'calendar', name: '日历' },
@@ -330,6 +394,28 @@ const daysUntilNextPeriod = computed(() => {
   return Math.ceil((predicted - today) / (1000 * 60 * 60 * 24))
 })
 
+const confidenceLabel = computed(() => {
+  const c = prediction.value?.confidence || 0
+  if (c < 0.5) return '低'
+  if (c < 0.75) return '中'
+  return '高'
+})
+
+const confidenceColorClass = computed(() => {
+  const c = prediction.value?.confidence || 0
+  if (c < 0.5) return 'text-gray-500'
+  if (c < 0.75) return 'text-orange-500'
+  return 'text-green-500'
+})
+
+const confidenceTooltip = computed(() => {
+  const c = prediction.value?.confidence || 0
+  const pct = (c * 100).toFixed(0)
+  if (c < 0.5) return `置信度 ${pct}%：记录较少，预测仅供参考`
+  if (c < 0.75) return `置信度 ${pct}%：记录增加中，预测趋势可参考`
+  return `置信度 ${pct}%：记录较充分，预测相对稳定`
+})
+
 const calendarDays = computed(() => {
   const year = currentMonth.value.getFullYear()
   const month = currentMonth.value.getMonth()
@@ -346,7 +432,8 @@ function createEmptyRecordForm() {
     start_date: '',
     end_date: '',
     flow_intensity: 3,
-    symptoms: []
+    symptoms: [],
+    notes: ''
   }
 }
 
@@ -374,9 +461,9 @@ function getDayClass(day) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  if (date.getTime() === today.getTime()) return 'bg-blue-100 text-blue-700 font-semibold'
-  if (isPeriodDay(day)) return 'bg-red-50 text-red-600'
-  return 'text-gray-700 hover:bg-gray-50'
+  if (date.getTime() === today.getTime()) return 'bg-blue-100 text-blue-700 font-semibold cursor-pointer hover:bg-blue-200'
+  if (isPeriodDay(day)) return 'bg-red-50 text-red-600 cursor-pointer hover:bg-red-100'
+  return 'text-gray-700 hover:bg-gray-50 cursor-pointer'
 }
 
 function isPeriodDay(day) {
@@ -411,6 +498,28 @@ function toggleSymptom(symptom) {
   else recordForm.value.symptoms.splice(index, 1)
 }
 
+function findRecordByDay(day) {
+  const date = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth(), day)
+  return records.value.find(record => {
+    const start = parseLocalDate(record.start_date)
+    const end = record.end_date ? parseLocalDate(record.end_date) : start
+    return date >= start && date <= end
+  })
+}
+
+function onCalendarDayClick(day) {
+  const record = findRecordByDay(day)
+  if (record) {
+    startEditRecord(record)
+  } else {
+    const year = currentMonth.value.getFullYear()
+    const month = String(currentMonth.value.getMonth() + 1).padStart(2, '0')
+    const d = String(day).padStart(2, '0')
+    openCreateRecordModal()
+    recordForm.value.start_date = `${year}-${month}-${d}`
+  }
+}
+
 function openCreateRecordModal() {
   editingRecordId.value = null
   recordForm.value = createEmptyRecordForm()
@@ -424,7 +533,8 @@ function startEditRecord(record) {
     start_date: toDateInput(record.start_date),
     end_date: toDateInput(record.end_date),
     flow_intensity: record.flow_intensity || 3,
-    symptoms: [...(record.symptoms || [])]
+    symptoms: [...(record.symptoms || [])],
+    notes: record.notes || ''
   }
   formError.value = ''
   showRecordModal.value = true
@@ -440,6 +550,11 @@ function closeRecordModal() {
 async function submitRecord() {
   if (!recordForm.value.start_date || isSubmitting.value) return
 
+  if (recordForm.value.end_date && recordForm.value.end_date < recordForm.value.start_date) {
+    formError.value = '结束日期不能早于开始日期'
+    return
+  }
+
   isSubmitting.value = true
   formError.value = ''
   try {
@@ -447,7 +562,8 @@ async function submitRecord() {
       start_date: recordForm.value.start_date,
       end_date: recordForm.value.end_date || null,
       flow_intensity: recordForm.value.flow_intensity,
-      symptoms: recordForm.value.symptoms
+      symptoms: recordForm.value.symptoms,
+      notes: recordForm.value.notes || null
     }
 
     if (editingRecordId.value) {
@@ -469,12 +585,22 @@ async function submitRecord() {
   }
 }
 
-async function deleteRecord(record) {
-  if (!window.confirm('确定删除这条周期记录吗？')) return
+function deleteRecord(record) {
+  recordToDelete.value = record
+  showDeleteConfirm.value = true
+}
 
-  deletingRecordId.value = record.id
+function cancelDelete() {
+  showDeleteConfirm.value = false
+  recordToDelete.value = null
+}
+
+async function confirmDelete() {
+  if (!recordToDelete.value) return
+
+  deletingRecordId.value = recordToDelete.value.id
   try {
-    await menstrualAPI.deleteRecord(record.id)
+    await menstrualAPI.deleteRecord(recordToDelete.value.id)
     await fetchData()
     showToast('周期记录已删除')
   } catch (error) {
@@ -482,6 +608,8 @@ async function deleteRecord(record) {
     showToast('删除失败，请稍后重试', 'error')
   } finally {
     deletingRecordId.value = null
+    showDeleteConfirm.value = false
+    recordToDelete.value = null
   }
 }
 
@@ -500,8 +628,19 @@ async function fetchData() {
   }
 }
 
+async function fetchIrregularity() {
+  try {
+    const res = await menstrualAPI.checkIrregularity()
+    irregularity.value = res || { is_irregular: false, reasons: [] }
+  } catch (error) {
+    console.error('Failed to fetch irregularity:', error)
+    irregularity.value = { is_irregular: false, reasons: [] }
+  }
+}
+
 onMounted(() => {
   fetchData()
+  fetchIrregularity()
 })
 </script>
 
