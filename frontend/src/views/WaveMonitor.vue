@@ -22,16 +22,48 @@
         </div>
       </div>
 
+      <!-- BLE 连接栏 -->
+      <div class="flex items-center justify-between bg-white rounded-xl shadow-sm border border-gray-100 px-3 py-2 mb-3">
+        <div class="flex items-center gap-2">
+          <!-- 状态指示点 -->
+          <span
+            class="w-2 h-2 rounded-full flex-shrink-0"
+            :class="{
+              'bg-green-400 animate-pulse': ble.isConnected,
+              'bg-yellow-400 animate-pulse': ble.isConnecting,
+              'bg-red-400':   ble.status === 'error',
+              'bg-gray-300':  ble.status === 'disconnected',
+            }"
+          ></span>
+          <span class="text-sm text-gray-700">
+            <template v-if="ble.isConnected">{{ ble.deviceName }}</template>
+            <template v-else-if="ble.isConnecting">正在连接…</template>
+            <template v-else-if="ble.status === 'error'">{{ ble.errorMsg }}</template>
+            <template v-else>未连接设备</template>
+          </span>
+        </div>
+        <button
+          @click="ble.isConnected ? ble.disconnect() : ble.connect()"
+          :disabled="ble.isConnecting"
+          class="px-3 py-0.5 rounded-full text-xs font-medium transition-colors"
+          :class="ble.isConnected
+            ? 'bg-red-100 text-red-600 hover:bg-red-200'
+            : 'bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50'"
+        >
+          {{ ble.isConnected ? '断开' : ble.isConnecting ? '连接中…' : '连接蓝牙' }}
+        </button>
+      </div>
+
       <!-- HRV Waveform -->
       <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3 mb-3">
         <div class="flex justify-between items-center mb-1.5">
           <div class="flex items-center gap-1.5">
             <span class="text-lg">💓</span>
-            <span class="font-medium text-gray-700 text-sm">HRV 心率变异性</span>
+            <span class="font-medium text-gray-700 text-sm">心率</span>
           </div>
           <div class="text-right">
-            <span class="text-xl font-bold text-blue-600">{{ currentHrv.toFixed(1) }}</span>
-            <span class="text-xs text-gray-500 ml-0.5">ms</span>
+            <span class="text-xl font-bold text-blue-600">{{ currentHrv.toFixed(0) }}</span>
+            <span class="text-xs text-gray-500 ml-0.5">BPM</span>
           </div>
         </div>
         <canvas ref="hrvCanvas" class="w-full" height="100"></canvas>
@@ -165,6 +197,9 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { biometricAPI, emotionAPI } from '../api'
 import BottomNav from '../components/BottomNav.vue'
+import { useBleStore } from '../stores/ble'
+
+const ble = useBleStore()
 
 const MAX_POINTS = 100
 
@@ -181,7 +216,7 @@ const tempData = ref([])
 const cbfData = ref([])
 const currentHrv = ref(0)
 const currentTemp = ref(0)
-const currentCbf = ref(50)
+const currentCbf = ref(0)
 const motion = ref('LOW')
 
 // Emotion state
@@ -330,7 +365,7 @@ function drawWaveform(canvas, data, color, minVal, maxVal) {
 
 function draw() {
   if (hrvCanvas.value && tempCanvas.value && cbfCanvas.value) {
-    drawWaveform(hrvCanvas.value, hrvData.value, '#3b82f6', 0, 200)
+    drawWaveform(hrvCanvas.value, hrvData.value, '#3b82f6', 40, 140)  // 心率正常范围 40~140 BPM
     drawWaveform(tempCanvas.value, tempData.value, '#ec4899', 25, 40)
     drawWaveform(cbfCanvas.value, cbfData.value, '#8b5cf6', 30, 70)
   }
@@ -342,84 +377,43 @@ function draw() {
 
 async function fetchData() {
   if (isPaused.value) return
+  if (!ble.isConnected) return
 
   try {
     const response = await biometricAPI.query({ limit: 1 })
 
     if (response && response.length > 0) {
-      // Get the latest data point
       const latest = response[0]
       const latestTimestamp = latest.timestamp || null
+      const isNewData = latestTimestamp !== lastBiometricTimestamp
 
-      if (latestTimestamp && latestTimestamp === lastBiometricTimestamp) {
-        return
-      }
-      lastBiometricTimestamp = latestTimestamp
+      if (isNewData) {
+        lastBiometricTimestamp = latestTimestamp
 
-      currentHrv.value = latest.hrv || 0
-      currentTemp.value = latest.skin_temperature || 0
-      // 从API获取脑血流量，如果没有则使用模拟数据
-      currentCbf.value = latest.cerebral_blood_flow || (45 + Math.random() * 15)
-      motion.value = latest.motion || 'LOW'
-      lastUpdate.value = new Date(latest.timestamp)
-
-      // Add to data buffers
-      hrvData.value.push(latest.hrv || 0)
-      tempData.value.push(latest.skin_temperature || 0)
-      cbfData.value.push(currentCbf.value)
-
-      // Trim to max points
-      if (hrvData.value.length > MAX_POINTS) {
-        hrvData.value.shift()
-      }
-      if (tempData.value.length > MAX_POINTS) {
-        tempData.value.shift()
-      }
-      if (cbfData.value.length > MAX_POINTS) {
-        cbfData.value.shift()
+        // 有新数据时更新数值
+        currentHrv.value = latest.hrv ?? 0
+        currentTemp.value = latest.skin_temperature ?? 0
+        currentCbf.value = latest.cerebral_blood_flow ?? 0
+        motion.value = latest.motion || 'LOW'
+        lastUpdate.value = new Date(latest.timestamp)
       }
 
-      dataPoints.value = hrvData.value.length
+      // 无论有没有新数据，只要佩戴中就往图表 push（用当前值延续曲线）
+      if (latest.is_valid) {
+        hrvData.value.push(currentHrv.value)
+        tempData.value.push(currentTemp.value)
+        if (currentCbf.value > 0) cbfData.value.push(currentCbf.value)
 
-      fetchEmotion()
-    } else {
-      // Generate mock data for demo
-      currentHrv.value = 40 + Math.random() * 40
-      currentTemp.value = 34 + Math.random() * 4
-      currentCbf.value = 45 + Math.random() * 15
-      motion.value = Math.random() > 0.7 ? 'MEDIUM' : 'LOW'
-      lastUpdate.value = new Date()
+        if (hrvData.value.length > MAX_POINTS) hrvData.value.shift()
+        if (tempData.value.length > MAX_POINTS) tempData.value.shift()
+        if (cbfData.value.length > MAX_POINTS) cbfData.value.shift()
 
-      hrvData.value.push(currentHrv.value)
-      tempData.value.push(currentTemp.value)
-      cbfData.value.push(currentCbf.value)
-
-      if (hrvData.value.length > MAX_POINTS) hrvData.value.shift()
-      if (tempData.value.length > MAX_POINTS) tempData.value.shift()
-      if (cbfData.value.length > MAX_POINTS) cbfData.value.shift()
-
-      dataPoints.value = hrvData.value.length
-
-      fetchEmotion()
+        dataPoints.value = hrvData.value.length
+        if (isNewData) fetchEmotion()
+      }
     }
   } catch (error) {
     console.error('Failed to fetch biometric data:', error)
-    // Fallback to mock data on error
-    currentHrv.value = 40 + Math.random() * 40
-    currentTemp.value = 34 + Math.random() * 4
-    currentCbf.value = 45 + Math.random() * 15
-    motion.value = Math.random() > 0.7 ? 'MEDIUM' : 'LOW'
-    lastUpdate.value = new Date()
-
-    hrvData.value.push(currentHrv.value)
-    tempData.value.push(currentTemp.value)
-    cbfData.value.push(currentCbf.value)
-
-    if (hrvData.value.length > MAX_POINTS) hrvData.value.shift()
-    if (tempData.value.length > MAX_POINTS) tempData.value.shift()
-    if (cbfData.value.length > MAX_POINTS) cbfData.value.shift()
-
-    dataPoints.value = hrvData.value.length
   }
 }
 
@@ -467,7 +461,7 @@ function clearData() {
   dataPoints.value = 0
   currentHrv.value = 0
   currentTemp.value = 0
-  currentCbf.value = 50
+  currentCbf.value = 0
 }
 
 function resizeCanvas() {
@@ -485,16 +479,6 @@ function resizeCanvas() {
 onMounted(async () => {
   resizeCanvas()
   window.addEventListener('resize', resizeCanvas)
-
-  // Seed mock data once on first load if no data exists
-  try {
-    const existingData = await biometricAPI.query({ limit: 1 })
-    if (!existingData || existingData.length === 0) {
-      await biometricAPI.seed(50)
-    }
-  } catch (e) {
-    console.log('Seed skipped:', e)
-  }
 
   // Start polling
   fetchData()

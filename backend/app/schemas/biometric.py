@@ -34,6 +34,7 @@ class BiometricDataPoint(BaseModel):
     skin_temperature: Optional[float] = None
     motion: Optional[str] = None
     cerebral_blood_flow: Optional[float] = None  # mL/100g/min, 脑血流量
+    is_valid: Optional[int] = 1  # 1=佩戴中, 0=未佩戴
 
     class Config:
         from_attributes = True

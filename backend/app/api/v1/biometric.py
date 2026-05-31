@@ -26,9 +26,9 @@ class RawBiometricUpload(BaseModel):
 
 @router.post("/upload", response_model=BiometricResponse)
 async def upload_biometric_data(
-    data: BiometricUpload,
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+        data: BiometricUpload,
+        user_id: int = Depends(get_current_user_id),
+        db: Session = Depends(get_db)
 ):
     """
     上传生理数据（温度、心率、运动状态）
@@ -77,11 +77,11 @@ async def upload_biometric_data(
 
 @router.get("/query", response_model=List[BiometricDataPoint])
 async def query_biometric_data(
-    user_id: int = Depends(get_current_user_id),
-    start_date: datetime = None,
-    end_date: datetime = None,
-    limit: int = 100,
-    db: Session = Depends(get_db)
+        user_id: int = Depends(get_current_user_id),
+        start_date: datetime = None,
+        end_date: datetime = None,
+        limit: int = 100,
+        db: Session = Depends(get_db)
 ):
     """查询用户的生理数据历史"""
     query = db.query(BiometricData).filter(BiometricData.user_id == user_id)
@@ -98,8 +98,8 @@ async def query_biometric_data(
 
 @router.get("/latest")
 async def get_latest_biometric(
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+        user_id: int = Depends(get_current_user_id),
+        db: Session = Depends(get_db)
 ):
     """获取最新一条生理数据"""
     latest = db.query(BiometricData).filter(
@@ -120,9 +120,9 @@ async def get_latest_biometric(
 
 @router.post("/seed")
 async def seed_mock_data(
-    user_id: int = Depends(get_current_user_id),
-    count: int = 50,
-    db: Session = Depends(get_db)
+        user_id: int = Depends(get_current_user_id),
+        count: int = 50,
+        db: Session = Depends(get_db)
 ):
     """
     生成模拟生理数据用于测试
@@ -156,10 +156,10 @@ async def seed_mock_data(
 
 @router.post("/raw")
 async def upload_raw_biometric_data(
-    data: RawBiometricUpload,
-    user_id: int = Depends(get_current_user_id),
-    device_id: str = "DEVICE_001",
-    db: Session = Depends(get_db)
+        data: RawBiometricUpload,
+        user_id: int = Depends(get_current_user_id),
+        device_id: str = "DEVICE_001",
+        db: Session = Depends(get_db)
 ):
     """
     接收原始硬件数据（通过USB/蓝牙网关转发）
@@ -174,7 +174,7 @@ async def upload_raw_biometric_data(
             skin_temperature=data.temp,
             motion=data.motion,
             cerebral_blood_flow=data.cerebral_blood_flow,
-            is_valid=1
+            is_valid=1 if data.wearing else 0
         )
 
         db.add(biometric)
@@ -206,9 +206,9 @@ class CerebralBloodFlowUpload(BaseModel):
 
 @router.post("/cerebral-blood-flow/upload")
 async def upload_cerebral_blood_flow(
-    data: CerebralBloodFlowUpload,
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+        data: CerebralBloodFlowUpload,
+        user_id: int = Depends(get_current_user_id),
+        db: Session = Depends(get_db)
 ):
     """
     [预留接口] 上传脑血流量数据
@@ -216,7 +216,7 @@ async def upload_cerebral_blood_flow(
     """
     try:
         timestamp = data.timestamp or datetime.now()
-        
+
         # 同时更新到biometric_data表的cerebral_blood_flow字段
         biometric = BiometricData(
             user_id=user_id,
@@ -225,11 +225,11 @@ async def upload_cerebral_blood_flow(
             cerebral_blood_flow=data.cbf_value,
             is_valid=1
         )
-        
+
         db.add(biometric)
         db.commit()
         db.refresh(biometric)
-        
+
         return {
             "status": "success",
             "msg": "Cerebral blood flow data uploaded",
@@ -242,11 +242,11 @@ async def upload_cerebral_blood_flow(
 
 @router.get("/cerebral-blood-flow/history")
 async def get_cbf_history(
-    user_id: int = Depends(get_current_user_id),
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
-    limit: int = 100,
-    db: Session = Depends(get_db)
+        user_id: int = Depends(get_current_user_id),
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        limit: int = 100,
+        db: Session = Depends(get_db)
 ):
     """
     [预留接口] 获取脑血流量历史数据
@@ -256,14 +256,14 @@ async def get_cbf_history(
         BiometricData.user_id == user_id,
         BiometricData.cerebral_blood_flow.isnot(None)
     )
-    
+
     if start_date:
         query = query.filter(BiometricData.timestamp >= start_date)
     if end_date:
         query = query.filter(BiometricData.timestamp <= end_date)
-    
+
     results = query.order_by(BiometricData.timestamp.desc()).limit(limit).all()
-    
+
     return [
         {
             "timestamp": r.timestamp,
@@ -276,24 +276,24 @@ async def get_cbf_history(
 
 @router.get("/cerebral-blood-flow/average")
 async def get_cbf_average(
-    user_id: int = Depends(get_current_user_id),
-    hours: int = 24,
-    db: Session = Depends(get_db)
+        user_id: int = Depends(get_current_user_id),
+        hours: int = 24,
+        db: Session = Depends(get_db)
 ):
     """
     [预留接口] 获取指定时间窗口内的平均脑血流量
     用于趋势分析和健康评估
     """
     from sqlalchemy import func
-    
+
     cutoff_time = datetime.now() - timedelta(hours=hours)
-    
+
     avg_cbf = db.query(func.avg(BiometricData.cerebral_blood_flow)).filter(
         BiometricData.user_id == user_id,
         BiometricData.timestamp >= cutoff_time,
         BiometricData.cerebral_blood_flow.isnot(None)
     ).scalar()
-    
+
     return {
         "user_id": user_id,
         "time_window_hours": hours,
