@@ -1,0 +1,7 @@
+# Optional local AI/runtime dependencies.
+# Install only when you need local embedding models or a local vLLM server.
+# These packages are intentionally not part of requirements.txt because they
+# can be large, GPU/OS-specific, and often fail on ordinary Windows machines.
+
+sentence-transformers>=2.2.0
+vllm>=0.6.0; platform_system != "Windows"

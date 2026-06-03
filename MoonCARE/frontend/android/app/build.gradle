@@ -1,0 +1,129 @@
+import java.util.Properties
+
+apply plugin: 'com.android.application'
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { stream ->
+        keystoreProperties.load(stream)
+    }
+}
+
+def releaseStoreFile = keystoreProperties.getProperty('storeFile') ?: System.getenv('MOONCARE_UPLOAD_STORE_FILE')
+def releaseStorePassword = keystoreProperties.getProperty('storePassword') ?: System.getenv('MOONCARE_UPLOAD_STORE_PASSWORD')
+def releaseKeyAlias = keystoreProperties.getProperty('keyAlias') ?: System.getenv('MOONCARE_UPLOAD_KEY_ALIAS')
+def releaseKeyPassword = keystoreProperties.getProperty('keyPassword') ?: System.getenv('MOONCARE_UPLOAD_KEY_PASSWORD')
+def hasReleaseSigningConfig = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
+android {
+    namespace "com.mooncare.app"
+    compileSdk rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+
+    defaultConfig {
+        applicationId "com.mooncare.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 2
+        versionName "1.1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders = [
+            allowBackup: "false",
+            usesCleartextTraffic: "false"
+        ]
+        aaptOptions {
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseSigningConfig) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    flavorDimensions "distribution"
+    productFlavors {
+        internal {
+            dimension "distribution"
+            applicationIdSuffix ".internal"
+            resValue "string", "app_name", "MoonCARE Internal"
+            resValue "string", "title_activity_main", "MoonCARE Internal"
+            buildConfigField "String", "APP_UPDATE_CHANNEL", "\"beta\""
+            buildConfigField "boolean", "SELF_UPDATE_ENABLED", "true"
+        }
+        public {
+            dimension "distribution"
+            resValue "string", "app_name", "MoonCARE"
+            resValue "string", "title_activity_main", "MoonCARE"
+            buildConfigField "String", "APP_UPDATE_CHANNEL", "\"stable\""
+            buildConfigField "boolean", "SELF_UPDATE_ENABLED", "false"
+        }
+    }
+
+    buildTypes {
+        debug {
+            manifestPlaceholders = [
+                allowBackup: "false",
+                usesCleartextTraffic: "true"
+            ]
+        }
+        release {
+            minifyEnabled false
+            if (hasReleaseSigningConfig) {
+                signingConfig signingConfigs.release
+            }
+            manifestPlaceholders = [
+                allowBackup: "false",
+                usesCleartextTraffic: "false"
+            ]
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach { output ->
+            if (variant.buildType.name == "release") {
+                output.outputFileName = "MoonCARE-${variant.flavorName}-${variant.versionName}-${variant.versionCode}.apk"
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir { dirs 'libs' }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch (Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

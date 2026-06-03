@@ -1,0 +1,955 @@
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Form, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from typing import Dict, List, AsyncGenerator, Optional
+import json
+import logging
+import uuid
+from jose import ExpiredSignatureError, JWTError, jwt
+from datetime import datetime
+
+from app.database import get_db, SessionLocal
+from app.models.conversation import Conversation
+from app.models.user import User
+from app.schemas.chat import ChatMessage, ChatResponse, ChatHistoryResponse
+from app.services.agent_service import get_agent_service
+from app.services.assessment_service import AssessmentOrchestrator
+from app.services.product_memory_service import ProductMemoryService
+from app.services.nlp_service import NLPService
+from app.api.v1.deps import get_current_user_id
+from app.config import settings
+
+router = APIRouter(prefix="/chat", tags=["AI对话"])
+logger = logging.getLogger(__name__)
+
+
+# Store active WebSocket connections
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, Dict] = {}
+
+    async def connect(self, websocket: WebSocket, session_id: str, user_id: int):
+        await websocket.accept()
+        self.active_connections[session_id] = {
+            "websocket": websocket,
+            "user_id": user_id,
+            "created_at": datetime.now()
+        }
+
+    def disconnect(self, session_id: str):
+        if session_id in self.active_connections:
+            del self.active_connections[session_id]
+
+    def get_connection(self, session_id: str):
+        return self.active_connections.get(session_id)
+
+
+manager = ConnectionManager()
+
+
+def _decode_websocket_token(token: str) -> Optional[int]:
+    """Return the authenticated user id from a WebSocket token, or None."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = payload.get("sub")
+        return int(user_id) if user_id is not None else None
+    except (ExpiredSignatureError, JWTError, TypeError, ValueError):
+        return None
+
+
+async def _authenticate_websocket(websocket: WebSocket, db: Session) -> Optional[int]:
+    """Authenticate a browser WebSocket using a query token."""
+    token = websocket.query_params.get("token") or websocket.query_params.get("access_token")
+    user_id = _decode_websocket_token(token) if token else None
+    if user_id is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    user_exists = db.query(User.id).filter(User.id == user_id).first()
+    if not user_exists:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    return user_id
+
+
+def _ensure_chat_session_access(db: Session, user_id: int, session_id: Optional[str]) -> None:
+    """Reject writes to a chat session that already belongs to another user."""
+    if not session_id:
+        return
+
+    owner = db.query(Conversation.user_id).filter(
+        Conversation.session_id == session_id,
+    ).order_by(Conversation.id.asc()).first()
+    if owner and owner[0] != user_id:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+
+def _safe_capture_memory(
+    db: Session,
+    user_id: int,
+    conversation_id: int,
+    message: str,
+    context: Dict,
+    is_sensitive: bool,
+) -> Dict:
+    """Persist safe chat memories without blocking the main assistant reply."""
+    try:
+        return ProductMemoryService(db).capture_user_message(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=message,
+            context=context,
+            is_sensitive=is_sensitive,
+        )
+    except Exception as exc:
+        logger.warning("Failed to update chat memory state: %s", exc)
+        return {"updated": False, "count": 0, "categories": [], "reason": "error"}
+
+
+def _chat_response_metadata(
+    source: Dict,
+    assessment_state: Optional[Dict] = None,
+    memory_state: Optional[Dict] = None,
+) -> Dict:
+    """Build shared assistant metadata for REST, SSE, and WebSocket responses."""
+    return {
+        "reply_status": source.get("reply_status", "ok"),
+        "elapsed_ms": source.get("elapsed_ms", 0),
+        "cache_hit": source.get("cache_hit", False),
+        "cache_similarity": source.get("cache_similarity", 0.0),
+        "cache_match_type": source.get("cache_match_type", ""),
+        "first_token_latency_ms": source.get("first_token_latency_ms", 0),
+        "assessment_state": assessment_state or {},
+        "memory_state": memory_state or {},
+    }
+
+
+def _build_assistant_message_meta(
+    source: Dict,
+    assessment_state: Optional[Dict] = None,
+    memory_state: Optional[Dict] = None,
+) -> Dict:
+    """Persist assistant-visible metadata for session restoration."""
+    return {
+        "suggestions": list(source.get("suggestions", []) or []),
+        "actions": list(source.get("actions", []) or []),
+        "reply_status": source.get("reply_status", "ok"),
+        "elapsed_ms": source.get("elapsed_ms", 0),
+        "cache_hit": bool(source.get("cache_hit", False)),
+        "cache_similarity": source.get("cache_similarity", 0.0),
+        "cache_match_type": source.get("cache_match_type", ""),
+        "first_token_latency_ms": source.get("first_token_latency_ms", 0),
+        "assessment_snapshot": assessment_state or {},
+        "memory_snapshot": memory_state or {},
+    }
+
+
+def _serialize_chat_turn(conversation: Conversation) -> Dict:
+    """Serialize a stored chat turn for frontend restoration."""
+    message_meta = conversation.message_meta or {}
+    return {
+        "role": conversation.role,
+        "content": conversation.content,
+        "sentiment_score": conversation.sentiment_score,
+        "intent": conversation.intent,
+        "created_at": conversation.created_at.isoformat() if conversation.created_at else None,
+        "suggestions": list(message_meta.get("suggestions", []) or []),
+        "actions": list(message_meta.get("actions", []) or []),
+        "reply_status": message_meta.get("reply_status", "ok"),
+        "elapsed_ms": message_meta.get("elapsed_ms", 0),
+        "cache_hit": bool(message_meta.get("cache_hit", False)),
+        "cache_similarity": message_meta.get("cache_similarity", 0.0),
+        "cache_match_type": message_meta.get("cache_match_type", ""),
+        "first_token_latency_ms": message_meta.get("first_token_latency_ms", 0),
+        "assessment_state": dict(message_meta.get("assessment_snapshot", {}) or {}),
+        "memory_state": dict(message_meta.get("memory_snapshot", {}) or {}),
+    }
+
+
+def _persist_chat_turns(
+    db: Session,
+    *,
+    user_id: int,
+    session_id: str,
+    user_message: str,
+    assistant_message: str,
+    intent: str,
+    sentiment_score: Optional[float],
+    is_sensitive: bool,
+    assistant_message_meta: Dict,
+) -> Conversation:
+    """Persist one user turn and one assistant turn for the same session."""
+    last_turn = db.query(func.max(Conversation.turn_number)).filter(
+        Conversation.user_id == user_id,
+        Conversation.session_id == session_id,
+    ).scalar() or 0
+
+    user_conv = Conversation(
+        user_id=user_id,
+        session_id=session_id,
+        turn_number=last_turn + 1,
+        role="user",
+        content=user_message,
+        intent=intent,
+        sentiment_score=sentiment_score,
+        is_sensitive=1 if is_sensitive else 0,
+    )
+    assistant_conv = Conversation(
+        user_id=user_id,
+        session_id=session_id,
+        turn_number=last_turn + 2,
+        role="assistant",
+        content=assistant_message,
+        message_meta=assistant_message_meta,
+    )
+    db.add(user_conv)
+    db.add(assistant_conv)
+    db.flush()
+    return user_conv
+
+
+def _load_chat_user_profile(db: Session, user_id: int) -> Dict[str, Optional[str]]:
+    """Load the minimal user profile needed for personalized chat replies."""
+    user = db.query(User).filter(User.id == user_id).first()
+    nickname = ""
+    email = None
+    if user:
+        nickname = (user.nickname or "").strip()
+        email = user.email
+    return {
+        "id": user_id,
+        "email": email,
+        "nickname": nickname or None,
+    }
+
+
+def _is_first_assistant_turn(db: Session, user_id: int, session_id: str) -> bool:
+    """Return whether the session has not yet stored any assistant reply."""
+    assistant_turn = db.query(Conversation.id).filter(
+        Conversation.user_id == user_id,
+        Conversation.session_id == session_id,
+        Conversation.role == "assistant",
+    ).first()
+    return assistant_turn is None
+
+
+def _should_personalize_first_reply(
+    nickname: Optional[str],
+    first_assistant_turn: bool,
+    risk_level: str = "low",
+    route_name: str = "support",
+) -> bool:
+    """Only personalize safe, first-turn support-style replies."""
+    safe_nickname = (nickname or "").strip()
+    normalized_route = (route_name or "").lower()
+    if not safe_nickname or not first_assistant_turn:
+        return False
+    if risk_level in {"high", "crisis"}:
+        return False
+    if normalized_route.startswith("knowledge") or normalized_route.startswith("intervention"):
+        return False
+    return True
+
+
+def _personalize_first_reply(
+    reply: str,
+    nickname: Optional[str],
+    first_assistant_turn: bool,
+    risk_level: str = "low",
+    route_name: str = "support",
+) -> str:
+    """Add a one-time natural nickname address to the first assistant reply."""
+    text = (reply or "").strip()
+    safe_nickname = (nickname or "").strip()
+    if not text or not _should_personalize_first_reply(safe_nickname, first_assistant_turn, risk_level, route_name):
+        return reply
+    if safe_nickname in text or text.startswith(f"{safe_nickname}，"):
+        return reply
+    return f"{safe_nickname}，{text}"
+
+
+def _build_rest_chat_payload(
+    session_id: str,
+    response: Dict,
+    is_sensitive: bool,
+    assessment_state: Optional[Dict],
+    memory_state: Optional[Dict],
+) -> Dict:
+    """Build the REST chat response while preserving the legacy reply field."""
+    payload = {
+        "session_id": session_id,
+        "reply": response["message"],
+        "intent": response.get("intent", "general"),
+        "risk_level": response.get("state", {}).get("risk_level", "low"),
+        "suggestions": response.get("suggestions", []),
+        "actions": response.get("actions", []),
+        "is_sensitive": is_sensitive,
+    }
+    payload.update(_chat_response_metadata(response, assessment_state, memory_state))
+    return payload
+
+
+def _build_ws_assistant_payload(
+    response: Dict,
+    sentiment_score: float,
+    is_sensitive: bool,
+    assessment_state: Optional[Dict],
+    memory_state: Optional[Dict],
+) -> Dict:
+    """Build the WebSocket assistant payload with shared metadata."""
+    payload = {
+        "type": "assistant",
+        "message": response["message"],
+        "sentiment_score": sentiment_score,
+        "intent": response.get("intent", "general"),
+        "is_sensitive": is_sensitive,
+        "suggestions": response.get("suggestions", []),
+        "actions": response.get("actions", []),
+        "risk_level": response.get("state", {}).get("risk_level", "low"),
+    }
+    payload.update(_chat_response_metadata(response, assessment_state, memory_state))
+    return payload
+
+
+def _build_sse_end_payload(
+    session_id: str,
+    final_response: str,
+    chunk: Dict,
+    assessment_state: Optional[Dict],
+    memory_state: Optional[Dict],
+) -> Dict:
+    """Build the final SSE event payload with shared metadata."""
+    payload = {
+        "type": "end",
+        "session_id": session_id,
+        "full_response": final_response,
+        "actions": chunk.get("actions", []),
+        "suggestions": chunk.get("suggestions", []),
+    }
+    payload.update(_chat_response_metadata(chunk, assessment_state, memory_state))
+    return payload
+
+
+def _truncate_client_context(text: str, limit: int = 500) -> str:
+    """Bound client-provided context before it is used as prompt-only history."""
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[: limit - 1]}…"
+
+
+def _parse_client_context_messages(client_context: Optional[str], current_message: str = "") -> List[Dict[str, str]]:
+    """Parse recent client-visible chat turns as bounded, prompt-only fallback context."""
+    if not client_context:
+        return []
+
+    try:
+        payload = json.loads(client_context)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    if not isinstance(payload, list):
+        return []
+
+    safe_messages: List[Dict[str, str]] = []
+    for item in payload[-12:]:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = _truncate_client_context(str(item.get("content") or ""))
+        if role not in {"user", "assistant"} or not content:
+            continue
+        safe_messages.append({"role": role, "content": content})
+
+    current = " ".join((current_message or "").split())
+    while safe_messages and safe_messages[-1]["role"] == "user" and safe_messages[-1]["content"] == current:
+        safe_messages.pop()
+
+    return safe_messages
+
+
+def _format_client_recent_context(messages: List[Dict[str, str]]) -> str:
+    """Format client fallback turns like DB recent context."""
+    if not messages:
+        return "暂无最近对话。"
+    return "\n".join(f"{item['role']}: {item['content']}" for item in messages)
+
+
+def _merge_client_context_into_memory(
+    conversation_memory: Dict[str, object],
+    client_messages: List[Dict[str, str]],
+) -> Dict[str, object]:
+    """Use client-visible history only when server-side session turns are unavailable."""
+    memory = dict(conversation_memory or {})
+    memory_state = dict(memory.get("memory_state") or {})
+    has_server_messages = bool(memory.get("conversation_messages"))
+    memory_state["client_context_used"] = False
+    memory_state["client_context_turns"] = len(client_messages)
+
+    if client_messages and not has_server_messages:
+        memory["conversation_messages"] = client_messages
+        if not memory.get("recent_context") or memory.get("recent_context") == "暂无最近对话。":
+            memory["recent_context"] = _format_client_recent_context(client_messages)
+        memory_state["client_context_used"] = True
+
+    memory["memory_state"] = memory_state
+    return memory
+
+
+def _build_conversation_memory_context(
+    db: Session,
+    user_id: int,
+    session_id: str,
+    query_message: str,
+    client_context: Optional[str] = None,
+) -> Dict[str, object]:
+    """Build server memory, with bounded client-visible history as fallback only."""
+    memory_service = ProductMemoryService(db)
+    conversation_memory = memory_service.build_prompt_context(
+        user_id=user_id,
+        session_id=session_id,
+        query_message=query_message,
+    )
+    client_messages = _parse_client_context_messages(client_context, query_message)
+    return _merge_client_context_into_memory(conversation_memory, client_messages)
+
+
+def _attach_user_chat_context(
+    db: Session,
+    user_id: int,
+    session_id: str,
+    context: Dict,
+) -> Dict:
+    """Attach user profile and first-turn flags for downstream agent prompts."""
+    enriched = dict(context or {})
+    user_profile = _load_chat_user_profile(db, user_id)
+    enriched["user_profile"] = user_profile
+    enriched["user_nickname"] = user_profile.get("nickname")
+    enriched["is_first_assistant_turn"] = _is_first_assistant_turn(db, user_id, session_id)
+    return enriched
+
+
+async def _websocket_chat_authenticated(websocket: WebSocket):
+    """
+    WebSocket AI对话
+    触发条件：用户点击聊聊按钮或系统检测到情绪波动升高
+    支持多轮上下文记忆
+    """
+    db = SessionLocal()
+    user_id = await _authenticate_websocket(websocket, db)
+    if user_id is None:
+        db.close()
+        return
+
+    session_id = str(uuid.uuid4())
+    await manager.connect(websocket, session_id, user_id)
+
+    agent_service = get_agent_service()
+    nlp_service = NLPService()
+
+    try:
+        # Send session info
+        await websocket.send_json({
+            "type": "session",
+            "session_id": session_id,
+            "message": "连接成功，开始聊天吧~"
+        })
+
+        while True:
+            data = await websocket.receive_json()
+            user_message = data.get("message", "")
+            agent_mode = data.get("agent_mode", "auto")
+            client_context = data.get("client_context")
+
+            if not user_message:
+                continue
+
+            # Analyze user message
+            nlp_result = await nlp_service.analyze_text(user_message)
+            intent = nlp_service.get_intent(user_message)
+            is_sensitive = nlp_service.check_sensitive(user_message)
+            nlp_result["intent"] = intent
+            nlp_result["conversation_memory"] = _build_conversation_memory_context(
+                db=db,
+                user_id=user_id,
+                session_id=session_id,
+                query_message=user_message,
+                client_context=client_context,
+            )
+            nlp_result = _attach_user_chat_context(
+                db=db,
+                user_id=user_id,
+                session_id=session_id,
+                context=nlp_result,
+            )
+
+            assessment = AssessmentOrchestrator(db)
+            should_record_assessment_answer = assessment.is_awaiting_answer(user_id, session_id)
+            assessment_result = assessment.prepare_turn(
+                user_id=user_id,
+                chat_session_id=session_id,
+                user_message=user_message,
+                context=nlp_result,
+            )
+
+            # Get AI response
+            response = await agent_service.get_response(
+                user_id=user_id,
+                session_id=session_id,
+                user_message=user_message,
+                context=nlp_result,
+                agent_mode=agent_mode,
+            )
+            response["message"] = _personalize_first_reply(
+                reply=response.get("message", ""),
+                nickname=nlp_result.get("user_nickname"),
+                first_assistant_turn=bool(nlp_result.get("is_first_assistant_turn")),
+                risk_level=response.get("state", {}).get("risk_level", "low"),
+                route_name=response.get("intent", agent_mode),
+            )
+            if assessment_result.assessment_prompt_hint and not response.get("suppress_assessment_prompt"):
+                response["message"] = f"{response['message']}\n\n{assessment_result.assessment_prompt_hint}"
+
+            conversation = _persist_chat_turns(
+                db=db,
+                user_id=user_id,
+                session_id=session_id,
+                user_message=user_message,
+                assistant_message=response["message"],
+                intent=intent,
+                sentiment_score=nlp_result.get("sentiment_score"),
+                is_sensitive=is_sensitive,
+                assistant_message_meta={},
+            )
+            if should_record_assessment_answer:
+                assessment.record_user_answer(
+                    user_id=user_id,
+                    chat_session_id=session_id,
+                    user_message=user_message,
+                    conversation_id=conversation.id,
+                )
+            memory_state = _safe_capture_memory(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation.id,
+                message=user_message,
+                context=nlp_result,
+                is_sensitive=is_sensitive,
+            )
+            assistant_conv = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.session_id == session_id,
+                Conversation.turn_number == conversation.turn_number + 1,
+            ).first()
+            if assistant_conv:
+                assistant_conv.message_meta = _build_assistant_message_meta(
+                    response,
+                    assessment_state=assessment_result.assessment_state,
+                    memory_state=memory_state,
+                )
+            db.commit()
+
+            await websocket.send_json(
+                _build_ws_assistant_payload(
+                    response=response,
+                    sentiment_score=nlp_result["sentiment_score"],
+                    is_sensitive=is_sensitive,
+                    assessment_state=assessment_result.assessment_state,
+                    memory_state=memory_state,
+                )
+            )
+
+    except WebSocketDisconnect:
+        manager.disconnect(session_id)
+        db.close()
+    except Exception as e:
+        manager.disconnect(session_id)
+        db.rollback()
+        db.close()
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "发生错误，请重新连接"
+            })
+        except:
+            pass
+
+
+@router.websocket("/ws")
+async def websocket_chat(websocket: WebSocket):
+    """Authenticated WebSocket chat endpoint."""
+    await _websocket_chat_authenticated(websocket)
+
+
+@router.websocket("/ws/{path_user_id}")
+async def websocket_chat_legacy(websocket: WebSocket, path_user_id: int):
+    """Legacy WebSocket path; path_user_id is ignored and token identity wins."""
+    await _websocket_chat_authenticated(websocket)
+
+
+@router.get("/history/{session_id}", response_model=ChatHistoryResponse)
+async def get_chat_history(
+    session_id: str,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """获取对话历史"""
+    conversations = db.query(Conversation).filter(
+        Conversation.session_id == session_id,
+        Conversation.user_id == user_id
+    ).order_by(Conversation.turn_number).all()
+
+    turns = [_serialize_chat_turn(conv) for conv in conversations]
+
+    return ChatHistoryResponse(
+        session_id=session_id,
+        turns=turns,
+        total_turns=len(turns)
+    )
+
+
+@router.post("/session", response_model=dict)
+async def create_chat_session(user_id: int = Depends(get_current_user_id)):
+    """创建新的对话会话"""
+    session_id = str(uuid.uuid4())
+    return {
+        "session_id": session_id,
+        "created_at": datetime.now().isoformat()
+    }
+
+
+@router.post("/message")
+async def send_chat_message(
+    message: str = Form(...),
+    user_id: int = Depends(get_current_user_id),
+    session_id: Optional[str] = Form(None),
+    cycle_phase: Optional[str] = Form(None),
+    agent_mode: str = Form("auto"),
+    client_context: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """直接发送消息获取AI回复（REST API，非WebSocket）"""
+    if not session_id:
+        session_id = str(uuid.uuid4())
+    else:
+        _ensure_chat_session_access(db, user_id, session_id)
+
+    agent_service = get_agent_service()
+    nlp_service = NLPService()
+
+    # 分析消息
+    nlp_result = await nlp_service.analyze_text(message)
+    intent = nlp_service.get_intent(message)
+    is_sensitive = nlp_service.check_sensitive(message)
+
+    # 构建上下文
+    context = {
+        **nlp_result,
+        "intent": intent,
+        "cycle_phase": cycle_phase,
+        "sensor_data": {}
+    }
+    context["conversation_memory"] = _build_conversation_memory_context(
+        db=db,
+        user_id=user_id,
+        session_id=session_id,
+        query_message=message,
+        client_context=client_context,
+    )
+    context = _attach_user_chat_context(
+        db=db,
+        user_id=user_id,
+        session_id=session_id,
+        context=context,
+    )
+
+    assessment = AssessmentOrchestrator(db)
+    should_record_assessment_answer = assessment.is_awaiting_answer(user_id, session_id)
+    assessment_result = assessment.prepare_turn(
+        user_id=user_id,
+        chat_session_id=session_id,
+        user_message=message,
+        context=context,
+    )
+
+    # 获取AI响应（使用新的Agent系统）
+    response = await agent_service.get_response(
+        user_id=user_id,
+        session_id=session_id,
+        user_message=message,
+        context=context,
+        agent_mode=agent_mode,
+    )
+    response["message"] = _personalize_first_reply(
+        reply=response.get("message", ""),
+        nickname=context.get("user_nickname"),
+        first_assistant_turn=bool(context.get("is_first_assistant_turn")),
+        risk_level=response.get("state", {}).get("risk_level", "low"),
+        route_name=response.get("intent", agent_mode),
+    )
+    if assessment_result.assessment_prompt_hint and not response.get("suppress_assessment_prompt"):
+        response["message"] = f"{response['message']}\n\n{assessment_result.assessment_prompt_hint}"
+
+    user_conv = _persist_chat_turns(
+        db=db,
+        user_id=user_id,
+        session_id=session_id,
+        user_message=message,
+        assistant_message=response["message"],
+        intent=intent,
+        sentiment_score=nlp_result.get("sentiment_score"),
+        is_sensitive=is_sensitive,
+        assistant_message_meta={},
+    )
+    if should_record_assessment_answer:
+        assessment.record_user_answer(
+            user_id=user_id,
+            chat_session_id=session_id,
+            user_message=message,
+            conversation_id=user_conv.id,
+        )
+    memory_state = _safe_capture_memory(
+        db=db,
+        user_id=user_id,
+        conversation_id=user_conv.id,
+        message=message,
+        context=context,
+        is_sensitive=is_sensitive,
+    )
+    assistant_conv = db.query(Conversation).filter(
+        Conversation.user_id == user_id,
+        Conversation.session_id == session_id,
+        Conversation.turn_number == user_conv.turn_number + 1,
+    ).first()
+    if assistant_conv:
+        assistant_conv.message_meta = _build_assistant_message_meta(
+            response,
+            assessment_state=assessment_result.assessment_state,
+            memory_state=memory_state,
+        )
+    db.commit()
+
+    return _build_rest_chat_payload(
+        session_id=session_id,
+        response=response,
+        is_sensitive=is_sensitive,
+        assessment_state=assessment_result.assessment_state,
+        memory_state=memory_state,
+    )
+
+
+@router.get("/sessions")
+async def get_chat_sessions(
+    user_id: int = Depends(get_current_user_id),
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """获取用户的对话会话列表"""
+    from sqlalchemy import func
+
+    # Get distinct sessions
+    sessions = db.query(
+        Conversation.session_id,
+        func.max(Conversation.created_at).label("last_message_at"),
+        func.count(Conversation.id).label("message_count")
+    ).filter(
+        Conversation.user_id == user_id
+    ).group_by(
+        Conversation.session_id
+    ).order_by(
+        func.max(Conversation.created_at).desc()
+    ).limit(limit).all()
+
+    return [
+        {
+            "session_id": s.session_id,
+            "last_message_at": s.last_message_at.isoformat() if s.last_message_at else None,
+            "message_count": s.message_count
+        }
+        for s in sessions
+    ]
+
+
+@router.post("/stream")
+async def stream_chat_message(
+    message: str = Form(...),
+    user_id: int = Depends(get_current_user_id),
+    session_id: Optional[str] = Form(None),
+    cycle_phase: Optional[str] = Form(None),
+    agent_mode: str = Form("auto"),
+    client_context: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """SSE 流式聊天接口 - 支持实时打字效果"""
+    if not message:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+
+    if not session_id:
+        session_id = str(uuid.uuid4())
+    else:
+        _ensure_chat_session_access(db, user_id, session_id)
+
+    agent_service = get_agent_service()
+    nlp_service = NLPService()
+
+    nlp_result = await nlp_service.analyze_text(message)
+    intent = nlp_service.get_intent(message)
+    is_sensitive = nlp_service.check_sensitive(message)
+
+    context = {
+        **nlp_result,
+        "intent": intent,
+        "cycle_phase": cycle_phase,
+        "sensor_data": {}
+    }
+    context["conversation_memory"] = _build_conversation_memory_context(
+        db=db,
+        user_id=user_id,
+        session_id=session_id,
+        query_message=message,
+        client_context=client_context,
+    )
+    context = _attach_user_chat_context(
+        db=db,
+        user_id=user_id,
+        session_id=session_id,
+        context=context,
+    )
+
+    assessment = AssessmentOrchestrator(db)
+    should_record_assessment_answer = assessment.is_awaiting_answer(user_id, session_id)
+    assessment_result = assessment.prepare_turn(
+        user_id=user_id,
+        chat_session_id=session_id,
+        user_message=message,
+        context=context,
+    )
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        full_response = ""
+        first_token_latency_ms = 0
+        stream_agent_name = agent_mode
+        stream_risk_level = "low"
+        first_reply_personalized = False
+        stream_nickname = str(context.get("user_nickname") or "").strip()
+        
+        async for chunk in agent_service.get_streaming_response(
+            user_id=user_id,
+            session_id=session_id,
+            user_message=message,
+            context=context,
+            agent_mode=agent_mode,
+        ):
+            chunk_type = chunk.get("type")
+
+            if chunk_type == "start":
+                stream_risk_level = chunk.get("risk_level", "low")
+                stream_agent_name = chunk.get("agent_name", agent_mode)
+                data = {
+                    'type': 'start',
+                    'session_id': session_id,
+                    'risk_level': stream_risk_level,
+                    'agent_name': stream_agent_name,
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+
+            elif chunk_type == "token":
+                token = chunk.get("token", "")
+                if token and not first_reply_personalized:
+                    token = _personalize_first_reply(
+                        reply=token,
+                        nickname=stream_nickname,
+                        first_assistant_turn=bool(context.get("is_first_assistant_turn")),
+                        risk_level=stream_risk_level,
+                        route_name=stream_agent_name,
+                    )
+                    first_reply_personalized = bool(stream_nickname and stream_nickname in token)
+                full_response += token
+                if not first_token_latency_ms:
+                    first_token_latency_ms = chunk.get("first_token_latency_ms", 0)
+                data = {
+                    'type': 'token',
+                    'token': token,
+                    'phase': chunk.get('phase', 'answer'),
+                    'is_final': chunk.get('is_final', False),
+                    'first_token_latency_ms': chunk.get('first_token_latency_ms', 0),
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+            
+            elif chunk_type == "end":
+                final_response = chunk.get("full_response") or full_response
+                final_response = _personalize_first_reply(
+                    reply=final_response,
+                    nickname=stream_nickname,
+                    first_assistant_turn=bool(context.get("is_first_assistant_turn")),
+                    risk_level=stream_risk_level,
+                    route_name=stream_agent_name,
+                )
+                if assessment_result.assessment_prompt_hint and not chunk.get("suppress_assessment_prompt"):
+                    final_response = f"{final_response}\n\n{assessment_result.assessment_prompt_hint}"
+                full_response = final_response
+
+                # 保存对话记录
+                user_conv = _persist_chat_turns(
+                    db=db,
+                    user_id=user_id,
+                    session_id=session_id,
+                    user_message=message,
+                    assistant_message=final_response,
+                    intent=intent,
+                    sentiment_score=nlp_result.get("sentiment_score"),
+                    is_sensitive=is_sensitive,
+                    assistant_message_meta={},
+                )
+                if should_record_assessment_answer:
+                    assessment.record_user_answer(
+                        user_id=user_id,
+                        chat_session_id=session_id,
+                        user_message=message,
+                        conversation_id=user_conv.id,
+                    )
+                
+                memory_state = _safe_capture_memory(
+                    db=db,
+                    user_id=user_id,
+                    conversation_id=user_conv.id,
+                    message=message,
+                    context=context,
+                    is_sensitive=is_sensitive,
+                )
+                assistant_conv = db.query(Conversation).filter(
+                    Conversation.user_id == user_id,
+                    Conversation.session_id == session_id,
+                    Conversation.turn_number == user_conv.turn_number + 1,
+                ).first()
+                if assistant_conv:
+                    assistant_conv.message_meta = _build_assistant_message_meta(
+                        chunk,
+                        assessment_state=assessment_result.assessment_state,
+                        memory_state=memory_state,
+                    )
+                db.commit()
+
+                chunk["first_token_latency_ms"] = chunk.get("first_token_latency_ms", first_token_latency_ms)
+                data = _build_sse_end_payload(
+                    session_id=session_id,
+                    final_response=final_response,
+                    chunk=chunk,
+                    assessment_state=assessment_result.assessment_state,
+                    memory_state=memory_state,
+                )
+                # 再生成 SSE 格式的数据
+                yield f"data: {json.dumps(data)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "Transfer-Encoding": "chunked",
+            "X-Accel-Buffering": "no",
+        }
+    )

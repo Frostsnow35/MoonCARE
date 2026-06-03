@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+.env
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+.trae/
+
+# Logs
+*.log
+
+# Local secrets and generated handoff artifacts
+*.pem
+MoonCAREpack-server-*.zip
+*-verify.png
+t1
+
+# Awareness 本地记忆数据
+.awareness/
+
+# 其他
+*.pid
+*.swp
+MoonCARE/
+logs/
+mobile_releases/
+
+# Android build caches
+.gradle-android/
+.gradle-android-debug-2/
+
+# Frontend build outputs
+frontend/dist/
+frontend/.vite/
+frontend/node_modules/
+
+# Test and temp files
+.test_tmp/
+.test_tmp_music/
+.test_tmp_start_mooncare.pyc*
+healthai.db*
+active_logs/
+
+# Capacitor Android build
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/capacitor-cordova-android-plugins/
+
+# IDE
+.vscode/
+.idea/
+.trae/

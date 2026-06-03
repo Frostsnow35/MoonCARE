@@ -34,5 +34,5 @@ t1
 # 其他
 *.pid
 *.swp
-MoonCARE/
+# MoonCARE/  <-- Removed to allow tracking in mobile branch
 logs/

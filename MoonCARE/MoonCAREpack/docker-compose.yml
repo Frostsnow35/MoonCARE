@@ -1,0 +1,102 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: mooncare-postgres
+    environment:
+      POSTGRES_USER: mooncare
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env before running docker compose}
+      POSTGRES_DB: mooncare
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:${POSTGRES_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mooncare -d mooncare"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mooncare-net
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
+        PIP_DEFAULT_TIMEOUT: ${PIP_DEFAULT_TIMEOUT:-300}
+        PIP_RETRIES: ${PIP_RETRIES:-10}
+    image: mooncare:latest
+    container_name: mooncare-app
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${APP_BIND_ADDR:-127.0.0.1}:${APP_PORT:-18000}:8000"
+    volumes:
+      - music_data:/app/backend/music
+    environment:
+      DATABASE_URL: postgresql://mooncare:${DB_PASSWORD:?Set DB_PASSWORD in .env before running docker compose}@postgres:5432/mooncare
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT_INTERNAL: 5432
+      POSTGRES_USER: mooncare
+      POSTGRES_DB: mooncare
+      POSTGRES_READY_TIMEOUT_SECONDS: ${POSTGRES_READY_TIMEOUT_SECONDS:-90}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before running docker compose}
+      DEBUG: ${DEBUG:-false}
+      RUN_DB_MIGRATIONS: ${RUN_DB_MIGRATIONS:-false}
+      AUTH_PASSWORD_MIN_LENGTH: ${AUTH_PASSWORD_MIN_LENGTH:-8}
+      AUTH_EMAIL_CODE_TTL_MINUTES: ${AUTH_EMAIL_CODE_TTL_MINUTES:-10}
+      AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS: ${AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS:-60}
+      AUTH_EMAIL_CODE_MAX_ATTEMPTS: ${AUTH_EMAIL_CODE_MAX_ATTEMPTS:-5}
+      AUTH_EMAIL_DELIVERY_MODE: ${AUTH_EMAIL_DELIVERY_MODE:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      LLM_PROVIDER: ${LLM_PROVIDER:-nvidia}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
+      ZAI_BASE_URL: ${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4/}
+      ZAI_MODEL_NAME: ${ZAI_MODEL_NAME:-glm-5.1}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_BASE_URL: ${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NVIDIA_MODEL_NAME: ${NVIDIA_MODEL_NAME:-deepseek-ai/deepseek-v4-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      MODEL_NAME: ${MODEL_NAME:-gpt-3.5-turbo}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8001/v1}
+      VLLM_API_KEY: ${VLLM_API_KEY:-vllm-local}
+      VLLM_MODEL_NAME: ${VLLM_MODEL_NAME:-meta/llama-3.2-3b-instruct}
+      ACCELERATED_LLM_BASE_URL: ${ACCELERATED_LLM_BASE_URL:-http://host.docker.internal:30000/v1}
+      ACCELERATED_LLM_API_KEY: ${ACCELERATED_LLM_API_KEY:-accelerated-local}
+      ACCELERATED_LLM_MODEL_NAME: ${ACCELERATED_LLM_MODEL_NAME:-glm-5.1}
+      LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-45}
+      CHAT_AGENT_REPLY_TIMEOUT_SECONDS: ${CHAT_AGENT_REPLY_TIMEOUT_SECONDS:-45}
+      LLM_TRUST_ENV_PROXY: ${LLM_TRUST_ENV_PROXY:-false}
+      MEMORY_SYSTEM_ENABLED: ${MEMORY_SYSTEM_ENABLED:-true}
+      REDIS_URL: ${REDIS_URL:-}
+      SEMANTIC_CACHE_ENABLED: ${SEMANTIC_CACHE_ENABLED:-false}
+      AWARENESS_MEMORY_ENABLED: ${AWARENESS_MEMORY_ENABLED:-false}
+      AWARENESS_BASE_URL: ${AWARENESS_BASE_URL:-http://host.docker.internal:37800}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - mooncare-net
+
+volumes:
+  postgres_data:
+  music_data:
+
+networks:
+  mooncare-net:
