@@ -24,16 +24,15 @@ async function save() {
     <div class="card">
       <div class="row">
         <div class="label">API Base URL</div>
-        <input class="input" v-model="api_base_url" placeholder="http://10.0.2.2:8000/api/v1" />
+        <input class="input" v-model="api_base_url" placeholder="http://159.75.13.158:8000/api/v1" />
       </div>
       <div class="actions">
         <button class="btn primary" @click="save">保存</button>
         <div class="muted" v-if="saved_msg">{{ saved_msg }}</div>
       </div>
       <div class="muted">
-        Android 模拟器访问本机后端建议使用 http://10.0.2.2:8000
+        真机访问服务器后端示例：http://159.75.13.158:8000/api/v1
       </div>
     </div>
   </section>
 </template>
-
