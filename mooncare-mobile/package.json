@@ -9,20 +9,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@capacitor-community/bluetooth-le": "^7.0.0",
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
-    "@capacitor/device": "^7.0.0",
-    "@capacitor/network": "^7.0.0",
-    "@capacitor/preferences": "^7.0.0",
+    "@capacitor-community/bluetooth-le": "^6.1.0",
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
+    "@capacitor/device": "^6.0.3",
+    "@capacitor/ios": "^6.2.1",
+    "@capacitor/network": "^6.0.4",
+    "@capacitor/preferences": "^6.0.4",
     "axios": "^1.17.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.34",
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.0.0",
+    "@capacitor/cli": "^6.2.1",
     "@vitejs/plugin-vue": "^6.0.6",
+    "typescript": "^5.4.5",
     "vite": "^8.0.12"
   }
 }
