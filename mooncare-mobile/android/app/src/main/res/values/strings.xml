@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MoonCAREMobile</string>
+    <string name="title_activity_main">MoonCAREMobile</string>
+    <string name="package_name">com.mooncare.mobile</string>
+    <string name="custom_url_scheme">com.mooncare.mobile</string>
+</resources>
