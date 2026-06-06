@@ -18,6 +18,7 @@ from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
+from app.api.v1.deps import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models.auth import EmailVerificationCode
@@ -36,6 +37,7 @@ DEBUG_TEST_PASSWORD = "test123456"
 class EmailCodePurpose(str, Enum):
     register = "register"
     reset_password = "reset_password"
+    change_email = "change_email"
 
 
 class UserRegister(BaseModel):
@@ -65,6 +67,27 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class EmailChangeRequest(BaseModel):
+    new_email: EmailStr
+    current_password: str = Field(min_length=8, max_length=128)
+
+
+class EmailChangeConfirmRequest(BaseModel):
+    new_email: EmailStr
+    email_code: str = Field(min_length=6, max_length=6)
+
+
+class DeleteAccountRequest(BaseModel):
+    current_password: str = Field(min_length=8, max_length=128)
+    confirm_text: str = Field(min_length=2, max_length=20)
+
+
+class UserProfileUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=100)
+    notifications_enabled: bool | None = None
+    ai_assistant_enabled: bool | None = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -77,6 +100,8 @@ class UserResponse(BaseModel):
     id: int
     email: str
     nickname: str | None
+    notifications_enabled: bool = True
+    ai_assistant_enabled: bool = True
 
 
 class ApiResponse(BaseModel):
@@ -154,11 +179,18 @@ def _mask_email(email: str) -> str:
 def _email_subject(purpose: EmailCodePurpose) -> str:
     if purpose == EmailCodePurpose.reset_password:
         return "MoonCARE 密码重置验证码"
+    if purpose == EmailCodePurpose.change_email:
+        return "MoonCARE 换绑邮箱验证码"
     return "MoonCARE 注册邮箱验证码"
 
 
 def _email_body(code: str, purpose: EmailCodePurpose) -> str:
-    action = "重置密码" if purpose == EmailCodePurpose.reset_password else "完成注册"
+    if purpose == EmailCodePurpose.reset_password:
+        action = "重置密码"
+    elif purpose == EmailCodePurpose.change_email:
+        action = "换绑邮箱"
+    else:
+        action = "完成注册"
     ttl = settings.AUTH_EMAIL_CODE_TTL_MINUTES
     return (
         f"你的 MoonCARE 验证码是：{code}\n\n"
@@ -270,11 +302,15 @@ def _verify_email_code(
     email: str,
     purpose: EmailCodePurpose,
     code: str,
+    expected_user_id: int | None = None,
 ) -> None:
     """Verify and consume a one-time email code."""
     record = _latest_active_code(db, email, purpose)
     if not record:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="验证码无效或已过期")
+
+    if expected_user_id is not None and record.user_id != expected_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="验证码不属于当前账号")
 
     if record.attempts >= settings.AUTH_EMAIL_CODE_MAX_ATTEMPTS:
         record.consumed_at = _utcnow()
@@ -365,12 +401,13 @@ async def send_email_code(
     try:
         _deliver_email_code(email, plain_code, request.purpose)
     except Exception as exc:
-        logger.warning("Failed to deliver auth email code to %s: %s", _mask_email(email), exc)
+        logger.exception("Failed to deliver auth email code to %s", _mask_email(email))
         db.delete(record)
         db.commit()
+        detail = f"EMAIL_DELIVERY_FAILED: {exc.__class__.__name__}: {exc}"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="验证码邮件暂时无法发送，请稍后再试",
+            detail=detail,
         ) from exc
 
     return _send_code_response()
@@ -457,12 +494,13 @@ async def forgot_password(
     try:
         _deliver_email_code(email, plain_code, EmailCodePurpose.reset_password)
     except Exception as exc:
-        logger.warning("Failed to deliver reset email code to %s: %s", _mask_email(email), exc)
+        logger.exception("Failed to deliver reset email code to %s", _mask_email(email))
         db.delete(record)
         db.commit()
+        detail = f"EMAIL_DELIVERY_FAILED: {exc.__class__.__name__}: {exc}"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="验证码邮件暂时无法发送，请稍后再试",
+            detail=detail,
         ) from exc
 
     return _send_code_response()
@@ -487,3 +525,129 @@ async def reset_password(
     db.commit()
     logger.info("Reset password for user_id=%s email=%s", user.id, _mask_email(email))
     return ApiResponse(data={}, message="密码已重置，请重新登录")
+
+
+@router.post("/email-change/request", response_model=ApiResponse)
+async def request_email_change(
+    request: EmailChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse:
+    """Start a verified email change flow for the current user."""
+    new_email = normalize_email(request.new_email)
+    if new_email == current_user.email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新邮箱不能与当前邮箱相同")
+
+    existing = db.query(User).filter(User.email == new_email).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已被其他账号使用")
+
+    if not verify_password(request.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="当前密码不正确")
+
+    record = _create_email_code(db, new_email, EmailCodePurpose.change_email, user_id=current_user.id)
+    plain_code = getattr(record, "_plain_code")
+    try:
+        _deliver_email_code(new_email, plain_code, EmailCodePurpose.change_email)
+    except Exception as exc:
+        logger.exception("Failed to deliver email change code to %s", _mask_email(new_email))
+        db.delete(record)
+        db.commit()
+        detail = f"EMAIL_DELIVERY_FAILED: {exc.__class__.__name__}: {exc}"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+        ) from exc
+
+    return _send_code_response()
+
+
+@router.post("/email-change/confirm", response_model=TokenResponse)
+async def confirm_email_change(
+    request: EmailChangeConfirmRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TokenResponse:
+    """Confirm email change with a verification code sent to the new email."""
+    new_email = normalize_email(request.new_email)
+    if new_email == current_user.email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新邮箱不能与当前邮箱相同")
+
+    existing = db.query(User).filter(User.email == new_email, User.id != current_user.id).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已被其他账号使用")
+
+    _verify_email_code(
+        db,
+        new_email,
+        EmailCodePurpose.change_email,
+        request.email_code,
+        expected_user_id=current_user.id,
+    )
+
+    current_user.email = new_email
+    current_user.is_email_verified = True
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    logger.info("Changed email for user_id=%s new_email=%s", current_user.id, _mask_email(new_email))
+    return _token_for_user(current_user)
+
+
+@router.post("/me/delete", response_model=ApiResponse)
+async def delete_account(
+    request: DeleteAccountRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse:
+    """Delete the current account after password confirmation."""
+    if request.confirm_text.strip() != "注销":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请输入“注销”以确认操作")
+
+    if not verify_password(request.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="当前密码不正确")
+
+    user_id = current_user.id
+    email = current_user.email
+    db.delete(current_user)
+    db.commit()
+    logger.info("Deleted account user_id=%s email=%s", user_id, _mask_email(email))
+    return ApiResponse(data={}, message="账号已注销")
+
+@router.get("/me", response_model=UserResponse)
+async def get_profile(current_user: User = Depends(get_current_user)) -> UserResponse:
+    """Return the current authenticated user profile."""
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        nickname=current_user.nickname,
+        notifications_enabled=bool(current_user.notifications_enabled),
+        ai_assistant_enabled=bool(current_user.ai_assistant_enabled),
+    )
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_profile(
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserResponse:
+    """Update editable profile fields for the current user."""
+    if payload.nickname is not None:
+        current_user.nickname = payload.nickname.strip() or None
+    if payload.notifications_enabled is not None:
+        current_user.notifications_enabled = payload.notifications_enabled
+    if payload.ai_assistant_enabled is not None:
+        current_user.ai_assistant_enabled = payload.ai_assistant_enabled
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        nickname=current_user.nickname,
+        notifications_enabled=bool(current_user.notifications_enabled),
+        ai_assistant_enabled=bool(current_user.ai_assistant_enabled),
+    )

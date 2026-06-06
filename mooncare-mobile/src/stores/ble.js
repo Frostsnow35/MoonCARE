@@ -1,165 +1,114 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import { BleClient } from '@capacitor-community/bluetooth-le'
-import { biometric_upload_raw } from '../api'
-import { get_kv, set_kv, remove_kv } from '../services/kv'
+import { ref, computed } from 'vue'
+import { biometricAPI } from '../api'
 
-const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab'
+// 与 ESP32 代码中完全一致的 UUID
+const SERVICE_UUID      = '12345678-1234-1234-1234-1234567890ab'
 const CHARACTERISTIC_UUID = 'abcdefab-1234-1234-1234-abcdefabcdef'
 
-function data_view_to_string(data_view) {
-  const uint8 = new Uint8Array(data_view.buffer, data_view.byteOffset, data_view.byteLength)
-  return new TextDecoder().decode(uint8)
-}
-
 export const useBleStore = defineStore('ble', () => {
-  const status = ref('disconnected')
-  const error_msg = ref('')
-  const device_id = ref('')
-  const device_name = ref('')
-  const last_packet = ref(null)
+  // ── 状态 ──────────────────────────────────────────
+  const status = ref('disconnected')   // disconnected | connecting | connected | error
+  const errorMsg = ref('')
+  const lastPacket = ref(null)         // 最近一次解析成功的数据包
+  const deviceName = ref('')
 
-  const should_reconnect = ref(true)
-  const reconnect_attempt = ref(0)
+  let bleDevice = null
+  let bleCharacteristic = null
 
-  const is_connected = computed(() => status.value === 'connected')
-  const is_connecting = computed(() => status.value === 'connecting')
+  // ── 计算属性 ──────────────────────────────────────
+  const isConnected = computed(() => status.value === 'connected')
+  const isConnecting = computed(() => status.value === 'connecting')
 
-  async function initialize() {
-    try {
-      await BleClient.initialize()
-      const saved_device_id = await get_kv('ble_device_id')
-      const saved_device_name = await get_kv('ble_device_name')
-      if (saved_device_id) device_id.value = saved_device_id
-      if (saved_device_name) device_name.value = saved_device_name
-    } catch (err) {
+  // ── 连接 ──────────────────────────────────────────
+  async function connect() {
+    if (!navigator.bluetooth) {
+      errorMsg.value = '浏览器不支持 Web Bluetooth，请使用 Chrome 或 Edge'
       status.value = 'error'
-      error_msg.value = err?.message || '蓝牙初始化失败'
+      return
     }
-  }
 
-  async function pick_and_connect() {
-    error_msg.value = ''
-    should_reconnect.value = true
-    status.value = 'connecting'
     try {
-      await BleClient.initialize()
-      const device = await BleClient.requestDevice({
-        services: [SERVICE_UUID],
-        optionalServices: [SERVICE_UUID],
+      status.value = 'connecting'
+      errorMsg.value = ''
+
+      // Windows Chrome 对 128-bit 自定义 UUID filter 支持不稳定，用设备名过滤更可靠
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [
+          { name: 'MoonCare-Demo' },
+          { namePrefix: 'MoonCare' },
+        ],
+        optionalServices: [SERVICE_UUID]
       })
 
-      device_id.value = device.deviceId
-      device_name.value = device.name || 'MoonCare'
-      await set_kv('ble_device_id', device_id.value)
-      await set_kv('ble_device_name', device_name.value)
+      deviceName.value = bleDevice.name || 'MoonCare-Demo'
+      bleDevice.addEventListener('gattserverdisconnected', onDisconnected)
 
-      await connect(device_id.value)
-    } catch (err) {
-      status.value = 'disconnected'
-      error_msg.value = err?.message || '未选择设备或连接失败'
-    }
-  }
+      const server  = await bleDevice.gatt.connect()
+      const service = await server.getPrimaryService(SERVICE_UUID)
+      bleCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID)
 
-  async function connect(target_device_id) {
-    error_msg.value = ''
-    should_reconnect.value = true
-    status.value = 'connecting'
-    try {
-      await BleClient.initialize()
-      await BleClient.connect(target_device_id, () => on_disconnect(target_device_id))
+      // 订阅 Notify，每次 ESP32 推送数据时触发
+      await bleCharacteristic.startNotifications()
+      bleCharacteristic.addEventListener('characteristicvaluechanged', onData)
 
-      await BleClient.startNotifications(target_device_id, SERVICE_UUID, CHARACTERISTIC_UUID, on_notification)
-
-      reconnect_attempt.value = 0
       status.value = 'connected'
     } catch (err) {
-      status.value = 'error'
-      error_msg.value = err?.message || '连接失败'
-      schedule_reconnect()
-    }
-  }
-
-  async function disconnect() {
-    should_reconnect.value = false
-    error_msg.value = ''
-    try {
-      if (device_id.value) {
-        try {
-          await BleClient.stopNotifications(device_id.value, SERVICE_UUID, CHARACTERISTIC_UUID)
-        } catch (_) {}
-        try {
-          await BleClient.disconnect(device_id.value)
-        } catch (_) {}
+      // 用户取消选择器不算错误
+      if (err.name === 'NotFoundError' || err.message?.includes('cancelled')) {
+        status.value = 'disconnected'
+      } else {
+        errorMsg.value = err.message || '连接失败'
+        status.value = 'error'
       }
-    } finally {
-      status.value = 'disconnected'
     }
   }
 
-  async function forget_device() {
-    await disconnect()
-    device_id.value = ''
-    device_name.value = ''
-    await remove_kv('ble_device_id')
-    await remove_kv('ble_device_name')
-  }
-
-  function on_disconnect(target_device_id) {
-    if (device_id.value === target_device_id) {
-      status.value = 'disconnected'
+  // ── 断开 ──────────────────────────────────────────
+  async function disconnect() {
+    if (bleCharacteristic) {
+      try { await bleCharacteristic.stopNotifications() } catch (_) {}
+      bleCharacteristic.removeEventListener('characteristicvaluechanged', onData)
+      bleCharacteristic = null
     }
-    schedule_reconnect()
+    if (bleDevice?.gatt?.connected) {
+      bleDevice.gatt.disconnect()
+    }
+    bleDevice = null
+    status.value = 'disconnected'
+    deviceName.value = ''
   }
 
-  function schedule_reconnect() {
-    if (!should_reconnect.value) return
-    if (!device_id.value) return
-    if (status.value === 'connecting') return
-
-    const attempt = reconnect_attempt.value + 1
-    reconnect_attempt.value = attempt
-    const delay_ms = Math.min(15000, 500 * Math.pow(2, attempt))
-    status.value = 'connecting'
-
-    setTimeout(() => {
-      if (!should_reconnect.value) return
-      if (!device_id.value) return
-      connect(device_id.value)
-    }, delay_ms)
+  // ── 被动断开回调 ──────────────────────────────────
+  function onDisconnected() {
+    status.value = 'disconnected'
+    bleCharacteristic = null
   }
 
-  async function on_notification(value) {
+  // ── 接收数据 ──────────────────────────────────────
+  // ESP32 发送的格式：{"temp":36.5,"bpm":72.3,"motion":"LOW","wearing":true}
+  async function onData(event) {
     try {
-      const raw = data_view_to_string(value)
+      const raw = new TextDecoder().decode(event.target.value)
       const packet = JSON.parse(raw)
-      last_packet.value = packet
+      lastPacket.value = packet
 
-      await biometric_upload_raw(
-        {
-          temp: packet.temp ?? null,
-          bpm: packet.bpm ?? null,
-          motion: packet.motion ?? 'LOW',
-          wearing: packet.wearing ?? false,
-        },
-        device_id.value || 'DEVICE_001',
-      )
-    } catch (_) {}
+      // 字段名与后端 RawBiometricUpload 完全一致：temp / bpm / motion / wearing
+      await biometricAPI.uploadRaw({
+        temp:    packet.temp    ?? null,
+        bpm:     packet.bpm    ?? null,
+        motion:  packet.motion  ?? 'LOW',
+        wearing: packet.wearing ?? false,
+      })
+    } catch (err) {
+      // JSON 解析失败或上传失败时静默忽略，不中断连接
+      console.warn('[BLE] data error:', err)
+    }
   }
 
   return {
-    status,
-    error_msg,
-    device_id,
-    device_name,
-    last_packet,
-    is_connected,
-    is_connecting,
-    initialize,
-    pick_and_connect,
-    connect,
-    disconnect,
-    forget_device,
+    status, errorMsg, lastPacket, deviceName,
+    isConnected, isConnecting,
+    connect, disconnect,
   }
 })
-

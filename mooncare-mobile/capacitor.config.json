@@ -1,5 +1,6 @@
 {
   "appId": "com.mooncare.mobile",
   "appName": "MoonCAREMobile",
-  "webDir": "dist"
+  "webDir": "dist",
+  "allowMixedContent": true
 }
