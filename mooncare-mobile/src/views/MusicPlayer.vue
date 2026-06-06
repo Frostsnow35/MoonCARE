@@ -20,8 +20,9 @@
           @change="handleFileChange"
         />
         <button type="button" class="upload-button" :disabled="uploading" @click="openFilePicker">
-          上传本地音乐
+          导入本地音乐
         </button>
+        <p class="upload-hint">支持 mp3、wav、ogg、m4a、aac、flac，单个文件不超过 30MB。</p>
         <p v-if="uploadMessage" class="upload-message">{{ uploadMessage }}</p>
       </section>
 
@@ -43,6 +44,7 @@
             @song-change="handleSongChange"
             @play-state-change="handlePlayStateChange"
             @playback-error="handlePlaybackError"
+            @playback-started="handlePlaybackStarted"
           />
 
           <div v-if="currentSong" class="feedback-row">
@@ -72,7 +74,7 @@
               class="song-item"
               @click="playLikedSong(song)"
             >
-              <span class="song-index">♥</span>
+              <span class="song-index">心</span>
               <span class="song-copy">
                 <strong>{{ song.title }}</strong>
                 <small>{{ song.artist || '示例音乐' }}</small>
@@ -110,7 +112,7 @@
 
           <div v-else class="empty-list">
             <p>当前还没有可播放的音乐。</p>
-            <p class="empty-hint">你可以先上传本地音频，或确认服务器上的示例音乐目录是否已同步。</p>
+            <p class="empty-hint">你可以先导入本地音频，或确认服务器上的示例音乐目录已经同步。</p>
           </div>
         </section>
       </template>
@@ -139,6 +141,7 @@ const feedbackPending = ref(false)
 const feedbackMessage = ref('')
 const likedSongs = ref([])
 const fileInput = ref(null)
+const playedFeedbackKeys = ref(new Set())
 const likedSongsStorageKey = getUserScopedKey('mooncare_liked_music')
 
 const currentSong = computed(() => songs.value[currentIndex.value] || null)
@@ -187,6 +190,12 @@ async function handleFileChange(event) {
   event.target.value = ''
   if (!file) return
 
+  const allowedMimePrefix = 'audio/'
+  if (file.type && !file.type.startsWith(allowedMimePrefix)) {
+    uploadMessage.value = '请选择音频文件后再上传。'
+    return
+  }
+
   const formData = new FormData()
   formData.append('file', file)
   formData.append('title', file.name.replace(/\.[^.]+$/, ''))
@@ -196,12 +205,21 @@ async function handleFileChange(event) {
   uploadMessage.value = '正在上传...'
 
   try {
-    await musicAPI.upload(formData)
-    uploadMessage.value = '上传成功'
-    await loadMusic()
+    const uploadedSong = await musicAPI.upload(formData)
+    uploadMessage.value = '上传成功，已加入播放列表。'
+
+    const exists = songs.value.some(song => song.id === uploadedSong.id && song.url === uploadedSong.url)
+    if (!exists) {
+      songs.value = [uploadedSong, ...songs.value]
+      currentIndex.value = 0
+    }
+    playbackError.value = ''
   } catch (err) {
     console.error('Failed to upload music:', err)
-    uploadMessage.value = err?.response?.data?.detail || '上传失败，请确认文件为音频格式且大小不超过 30MB。'
+    uploadMessage.value =
+      err?.response?.data?.detail ||
+      err?.response?.data?.message ||
+      '上传失败，请确认文件是音频格式且大小不超过 30MB。'
   } finally {
     uploading.value = false
   }
@@ -235,12 +253,23 @@ function handlePlayStateChange(playing) {
   isPlaying.value = playing
 }
 
-function handlePlaybackError(payload) {
-  const song = payload?.song || currentSong.value
-  playbackError.value = `${song?.title || '当前音乐'} 暂时无法播放，请尝试切换其他歌曲。`
+async function handlePlaybackStarted(song) {
+  if (!song) return
+  const feedbackKey = `${song.id}:${song.url}:played`
+  if (playedFeedbackKeys.value.has(feedbackKey)) return
+
+  playedFeedbackKeys.value.add(feedbackKey)
+  await submitFeedback('played', song, false)
 }
 
-async function submitFeedback(action, song = currentSong.value) {
+async function handlePlaybackError(payload) {
+  const song = payload?.song || currentSong.value
+  const reason = payload?.message || '暂时无法播放'
+  playbackError.value = `${song?.title || '当前音乐'} ${reason}，请尝试切换其他曲目。`
+  await submitFeedback('play_failed', song, false)
+}
+
+async function submitFeedback(action, song = currentSong.value, showError = true) {
   if (!song || feedbackPending.value) return false
   feedbackPending.value = true
 
@@ -256,7 +285,9 @@ async function submitFeedback(action, song = currentSong.value) {
     return true
   } catch (err) {
     console.error('Failed to submit music feedback:', err)
-    feedbackMessage.value = '反馈暂时保存失败，请稍后再试。'
+    if (showError) {
+      feedbackMessage.value = '反馈暂时保存失败，请稍后再试。'
+    }
     return false
   } finally {
     feedbackPending.value = false
@@ -267,7 +298,7 @@ async function likeCurrentSong() {
   const song = currentSong.value
   if (!song) return
 
-  const saved = await submitFeedback('liked', song)
+  const saved = await submitFeedback('liked', song, true)
   if (!saved) return
 
   const exists = likedSongs.value.some(item => item.id === song.id && item.url === song.url)
@@ -282,7 +313,7 @@ async function dislikeCurrentSong() {
   const song = currentSong.value
   if (!song) return
 
-  await submitFeedback('disliked', song)
+  await submitFeedback('disliked', song, true)
   feedbackMessage.value = '这首歌已跳过。'
   if (songs.value.length > 1) {
     currentIndex.value = currentIndex.value < songs.value.length - 1 ? currentIndex.value + 1 : 0
@@ -377,12 +408,24 @@ onMounted(() => {
   opacity: 0.6;
 }
 
+.upload-hint {
+  margin: 10px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .upload-message,
 .error-text {
   margin: 10px 0 0;
   color: #64748b;
   font-size: 13px;
   text-align: center;
+}
+
+.error-text {
+  color: #dc2626;
 }
 
 .state-panel {

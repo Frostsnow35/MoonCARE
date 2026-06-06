@@ -3,6 +3,7 @@ import os
 import re
 from pathlib import Path
 from typing import Iterable, List, Optional
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -27,6 +28,10 @@ MUSIC_DIR = Path(__file__).resolve().parents[3] / "music"
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"}
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 ALLOWED_FEEDBACK_ACTIONS = {"played", "completed", "liked", "disliked", "skipped", "play_failed"}
+
+
+def _media_music_url(filename: str) -> str:
+    return f"/media/music/{quote(filename)}"
 
 
 def get_emotion_category_from_mood(mood_level: float) -> str:
@@ -128,7 +133,7 @@ def _local_music_candidates(requested_emotion: Optional[str] = None) -> List[Mus
             id=100000 + index,
             title=Path(filename).stem,
             artist="本地音乐",
-            url=f"/media/music/{filename}",
+            url=_media_music_url(filename),
             duration=180,
             mood_tags=[category, "local"],
             emotion_category=category,
@@ -292,7 +297,7 @@ async def upload_music(
     music = Music(
         title=(title or Path(file.filename or stored_name).stem).strip()[:200],
         artist=(artist or "本地上传").strip()[:100],
-        url=f"/media/music/{stored_name}",
+        url=_media_music_url(stored_name),
         duration=None,
         mood_tags=["uploaded", "local"],
         emotion_category="normal",

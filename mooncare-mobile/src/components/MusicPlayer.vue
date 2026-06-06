@@ -4,9 +4,11 @@
       <div class="disc" :class="{ spinning: isPlaying }">
         <span>{{ getSongEmoji(currentSong.emotion_category) }}</span>
       </div>
+
       <div class="song-meta">
         <div class="song-title">{{ currentSong.title }}</div>
         <div class="song-artist">{{ currentSong.artist || '未知艺术家' }}</div>
+        <p v-if="currentSong.playback_notice" class="song-notice">{{ currentSong.playback_notice }}</p>
       </div>
     </div>
 
@@ -14,6 +16,15 @@
       <div class="progress-track">
         <div class="progress-fill" :style="{ width: `${progress}%` }"></div>
       </div>
+      <input
+        v-model="seekPercent"
+        class="progress-slider"
+        type="range"
+        min="0"
+        max="100"
+        aria-label="播放进度"
+        @change="handleSeek"
+      />
       <div class="time-row">
         <span>{{ formatTime(currentTime) }}</span>
         <span>{{ formatTime(duration) }}</span>
@@ -22,20 +33,20 @@
 
     <div class="controls" aria-label="音乐播放控制">
       <button type="button" class="control-button" aria-label="上一首" @click="playPrevious">
-        <span>⏮</span>
+        <span>◀</span>
       </button>
 
       <button type="button" class="play-button" :aria-label="isPlaying ? '暂停' : '播放'" @click="togglePlay">
-        <span>{{ isPlaying ? '⏸' : '▶' }}</span>
+        <span>{{ isPlaying ? '❚❚' : '▶' }}</span>
       </button>
 
       <button type="button" class="control-button" aria-label="下一首" @click="playNext">
-        <span>⏭</span>
+        <span>▶</span>
       </button>
     </div>
 
     <div class="volume-row">
-      <span class="volume-icon">🔉</span>
+      <span class="volume-icon">低</span>
       <input
         v-model="volume"
         type="range"
@@ -45,7 +56,7 @@
         aria-label="音量"
         @input="updateVolume"
       />
-      <span class="volume-icon">🔊</span>
+      <span class="volume-icon">高</span>
     </div>
   </div>
 </template>
@@ -56,28 +67,37 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 const props = defineProps({
   songs: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   selectedIndex: {
     type: Number,
-    default: 0
+    default: 0,
   },
   autoPlay: {
     type: Boolean,
-    default: false
-  }
+    default: false,
+  },
 })
 
-const emit = defineEmits(['songChange', 'playStateChange', 'playbackError', 'playbackStarted'])
+const emit = defineEmits([
+  'songChange',
+  'playStateChange',
+  'playbackError',
+  'playbackStarted',
+])
 
-const audio = ref(new Audio())
+const audio = new Audio()
+audio.preload = 'metadata'
+audio.playsInline = true
+
 const currentIndex = ref(0)
 const isPlaying = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 const volume = ref(70)
+const seekPercent = ref(0)
 
-audio.value.volume = volume.value / 100
+audio.volume = volume.value / 100
 
 const currentSong = computed(() => props.songs[currentIndex.value] || null)
 
@@ -88,13 +108,13 @@ const progress = computed(() => {
 
 function getSongEmoji(category) {
   const emojis = {
-    joy: '😊',
-    normal: '🌿',
-    anxiety: '🫧',
-    sadness: '🌙',
-    calm: '☁️'
+    joy: '♪',
+    normal: '♫',
+    anxiety: '◌',
+    sadness: '♩',
+    calm: '♬',
   }
-  return emojis[category] || '🎵'
+  return emojis[category] || '♫'
 }
 
 function formatTime(seconds) {
@@ -113,19 +133,38 @@ function reportPlaybackError(error) {
   emitPlaybackState(false)
   emit('playbackError', {
     song: currentSong.value,
-    message: error?.message || '音频暂时无法播放'
+    message: error?.message || '音频暂时无法播放',
   })
 }
 
+function loadCurrentSong() {
+  if (!currentSong.value?.url) {
+    audio.removeAttribute('src')
+    audio.load()
+    currentTime.value = 0
+    duration.value = 0
+    seekPercent.value = 0
+    return
+  }
+
+  if (audio.src !== currentSong.value.url) {
+    audio.src = currentSong.value.url
+  }
+  audio.load()
+  currentTime.value = 0
+  duration.value = 0
+  seekPercent.value = 0
+  emit('songChange', currentSong.value)
+}
+
 async function startPlayback() {
-  if (!currentSong.value) return
+  if (!currentSong.value?.url) return
 
   try {
-    if (audio.value.src !== currentSong.value.url) {
-      audio.value.src = currentSong.value.url
-      audio.value.load()
+    if (audio.src !== currentSong.value.url) {
+      loadCurrentSong()
     }
-    await audio.value.play()
+    await audio.play()
     emitPlaybackState(true)
     emit('playbackStarted', currentSong.value)
   } catch (error) {
@@ -134,7 +173,7 @@ async function startPlayback() {
 }
 
 function pausePlayback() {
-  audio.value.pause()
+  audio.pause()
   emitPlaybackState(false)
 }
 
@@ -142,19 +181,16 @@ function togglePlay() {
   if (!currentSong.value) return
   if (isPlaying.value) {
     pausePlayback()
-  } else {
-    startPlayback()
+    return
   }
+  startPlayback()
 }
 
 function setIndex(index, shouldPlay = false) {
   if (index < 0 || index >= props.songs.length) return
   currentIndex.value = index
-  currentTime.value = 0
-  duration.value = 0
-  audio.value.src = currentSong.value.url
-  audio.value.load()
-  emit('songChange', currentSong.value)
+  loadCurrentSong()
+
   if (shouldPlay || props.autoPlay) {
     startPlayback()
   } else {
@@ -162,61 +198,79 @@ function setIndex(index, shouldPlay = false) {
   }
 }
 
-function playNext() {
+function playNext(forcePlay = isPlaying.value) {
+  if (!props.songs.length) return
   const nextIndex = currentIndex.value < props.songs.length - 1 ? currentIndex.value + 1 : 0
-  setIndex(nextIndex, isPlaying.value)
+  setIndex(nextIndex, forcePlay)
 }
 
-function playPrevious() {
+function playPrevious(forcePlay = isPlaying.value) {
+  if (!props.songs.length) return
   const previousIndex = currentIndex.value > 0 ? currentIndex.value - 1 : props.songs.length - 1
-  setIndex(previousIndex, isPlaying.value)
+  setIndex(previousIndex, forcePlay)
 }
 
 function updateVolume() {
-  audio.value.volume = volume.value / 100
+  audio.volume = volume.value / 100
 }
 
 function handleTimeUpdate() {
-  currentTime.value = audio.value.currentTime
+  currentTime.value = audio.currentTime
+  seekPercent.value = progress.value
 }
 
 function handleLoadedMetadata() {
-  duration.value = Number.isFinite(audio.value.duration) ? audio.value.duration : 0
+  duration.value = Number.isFinite(audio.duration) ? audio.duration : 0
+  seekPercent.value = progress.value
 }
 
 function handleEnded() {
   emitPlaybackState(false)
-  playNext()
+  playNext(true)
 }
 
-watch(() => props.songs, (newSongs) => {
-  if (!newSongs.length) {
-    pausePlayback()
-    currentIndex.value = 0
-    return
-  }
-  const nextIndex = Math.min(props.selectedIndex, newSongs.length - 1)
-  setIndex(nextIndex, false)
-}, { immediate: true })
+function handleSeek() {
+  if (!duration.value) return
+  audio.currentTime = duration.value * (Number(seekPercent.value) / 100)
+}
 
-watch(() => props.selectedIndex, (index, previousIndex) => {
-  if (index === previousIndex || !props.songs.length) return
-  setIndex(index, true)
-})
+watch(
+  () => props.songs,
+  (newSongs) => {
+    if (!newSongs.length) {
+      pausePlayback()
+      currentIndex.value = 0
+      loadCurrentSong()
+      return
+    }
+
+    const nextIndex = Math.min(props.selectedIndex, newSongs.length - 1)
+    setIndex(nextIndex, false)
+  },
+  { immediate: true, deep: true },
+)
+
+watch(
+  () => props.selectedIndex,
+  (index, previousIndex) => {
+    if (index === previousIndex || !props.songs.length) return
+    setIndex(index, true)
+  },
+)
 
 onMounted(() => {
-  audio.value.addEventListener('timeupdate', handleTimeUpdate)
-  audio.value.addEventListener('loadedmetadata', handleLoadedMetadata)
-  audio.value.addEventListener('ended', handleEnded)
-  audio.value.addEventListener('error', reportPlaybackError)
+  audio.addEventListener('timeupdate', handleTimeUpdate)
+  audio.addEventListener('loadedmetadata', handleLoadedMetadata)
+  audio.addEventListener('ended', handleEnded)
+  audio.addEventListener('error', reportPlaybackError)
 })
 
 onUnmounted(() => {
-  audio.value.pause()
-  audio.value.removeEventListener('timeupdate', handleTimeUpdate)
-  audio.value.removeEventListener('loadedmetadata', handleLoadedMetadata)
-  audio.value.removeEventListener('ended', handleEnded)
-  audio.value.removeEventListener('error', reportPlaybackError)
+  audio.pause()
+  audio.removeEventListener('timeupdate', handleTimeUpdate)
+  audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
+  audio.removeEventListener('ended', handleEnded)
+  audio.removeEventListener('error', reportPlaybackError)
 })
 </script>
 
@@ -268,6 +322,13 @@ onUnmounted(() => {
   color: #64748b;
 }
 
+.song-notice {
+  margin: 6px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .progress-track {
   width: 100%;
   height: 8px;
@@ -281,6 +342,12 @@ onUnmounted(() => {
   border-radius: inherit;
   background: linear-gradient(90deg, #ec4899 0%, #38bdf8 100%);
   transition: width 180ms ease;
+}
+
+.progress-slider {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: #ec4899;
 }
 
 .time-row {
@@ -341,7 +408,7 @@ onUnmounted(() => {
 .volume-icon {
   text-align: center;
   color: #64748b;
-  font-size: 15px;
+  font-size: 12px;
 }
 
 .volume-slider {

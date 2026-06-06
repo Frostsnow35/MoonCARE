@@ -41,11 +41,11 @@ function normalizeEnvelope(body) {
 
 function resolveMediaUrl(url) {
   if (!url) return url
-  if (/^https?:\/\//i.test(url)) return url
+  if (/^https?:\/\//i.test(url)) return encodeURI(url)
   if (url.startsWith('/')) {
-    return `${getBackendOrigin()}${url}`
+    return encodeURI(`${getBackendOrigin()}${url}`)
   }
-  return `${getBackendOrigin()}/${url.replace(/^\/+/, '')}`
+  return encodeURI(`${getBackendOrigin()}/${url.replace(/^\/+/, '')}`)
 }
 
 function normalizeMusicSong(song) {
