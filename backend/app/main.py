@@ -15,10 +15,11 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, DATABASE_URL
 from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth
 from app.services.semantic_cache_service import get_semantic_cache
 from app.services.conversation_compaction_service import get_conversation_compaction_service
+from app.services.schema_bootstrap_service import should_runtime_create_tables
 
 # Import all models to ensure they are registered with Base.metadata
 from app.models.user import User
@@ -56,9 +57,11 @@ async def lifespan(app: FastAPI):
     # Startup: Initialize services
     print("[Startup] Initializing HealthAI services...")
     
-    # Create database tables
-    Base.metadata.create_all(bind=engine)
-    print("[Startup] Database tables created")
+    if should_runtime_create_tables(DATABASE_URL):
+        Base.metadata.create_all(bind=engine)
+        print("[Startup] SQLite database tables ensured via metadata.create_all")
+    else:
+        print("[Startup] Skipping runtime metadata.create_all; managed database schema must be prepared before app startup.")
     
     # Initialize semantic cache service (warm-up)
     if settings.SEMANTIC_CACHE_ENABLED:
