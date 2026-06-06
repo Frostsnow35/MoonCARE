@@ -4,7 +4,7 @@
       <header class="page-header">
         <div>
           <p class="eyebrow">音乐疗愈</p>
-          <h1>陪伴播放</h1>
+          <h1>陪伴音乐</h1>
         </div>
         <button type="button" class="icon-button" :disabled="isLoading" aria-label="刷新音乐列表" @click="loadMusic">
           刷新
@@ -22,7 +22,7 @@
         <button type="button" class="upload-button" :disabled="uploading" @click="openFilePicker">
           导入本地音乐
         </button>
-        <p class="upload-hint">支持 mp3、wav、ogg、m4a、aac、flac，单个文件不超过 30MB。</p>
+        <p class="upload-hint">支持 mp3、wav、ogg、m4a、aac、flac，单个文件不超过 12 MB。</p>
         <p v-if="uploadMessage" class="upload-message">{{ uploadMessage }}</p>
       </section>
 
@@ -32,12 +32,13 @@
 
       <section v-else-if="error" class="state-panel">
         <p>{{ error }}</p>
-        <button type="button" class="plain-button" @click="loadMusic">重新加载</button>
+        <button type="button" class="plain-button" @click="loadMusic">重试</button>
       </section>
 
       <template v-else>
         <section class="player-panel">
           <MusicPlayer
+            ref="playerRef"
             :songs="songs"
             :selected-index="currentIndex"
             :auto-play="false"
@@ -52,7 +53,7 @@
               喜欢
             </button>
             <button type="button" :disabled="feedbackPending" @click="dislikeCurrentSong">
-              不合适
+              跳过
             </button>
           </div>
 
@@ -74,7 +75,7 @@
               class="song-item"
               @click="playLikedSong(song)"
             >
-              <span class="song-index">心</span>
+              <span class="song-index">收藏</span>
               <span class="song-copy">
                 <strong>{{ song.title }}</strong>
                 <small>{{ song.artist || '示例音乐' }}</small>
@@ -86,7 +87,7 @@
 
         <section class="list-panel">
           <div class="section-title">
-            <h2>可播放列表</h2>
+            <h2>可播放音乐</h2>
             <span>{{ songs.length }} 首</span>
           </div>
 
@@ -112,7 +113,7 @@
 
           <div v-else class="empty-list">
             <p>当前还没有可播放的音乐。</p>
-            <p class="empty-hint">你可以先导入本地音频，或确认服务器上的示例音乐目录已经同步。</p>
+            <p class="empty-hint">请先导入本地音乐，或确认服务器上的示例音乐目录已经部署。</p>
           </div>
         </section>
       </template>
@@ -123,7 +124,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { musicAPI } from '../api'
 import { getUserScopedKey } from '../services/userScopedStorage'
 import MusicPlayer from '../components/MusicPlayer.vue'
@@ -141,10 +142,26 @@ const feedbackPending = ref(false)
 const feedbackMessage = ref('')
 const likedSongs = ref([])
 const fileInput = ref(null)
+const playerRef = ref(null)
 const playedFeedbackKeys = ref(new Set())
 const likedSongsStorageKey = getUserScopedKey('mooncare_liked_music')
 
 const currentSong = computed(() => songs.value[currentIndex.value] || null)
+
+function sortSongsByReliability(list) {
+  const sourceRank = {
+    uploaded: 0,
+    local: 1,
+    library: 2,
+  }
+
+  return [...list].sort((a, b) => {
+    const aRank = sourceRank[a?.source] ?? 9
+    const bRank = sourceRank[b?.source] ?? 9
+    if (aRank !== bRank) return aRank - bRank
+    return String(a?.title || '').localeCompare(String(b?.title || ''))
+  })
+}
 
 async function loadMusic() {
   isLoading.value = true
@@ -153,7 +170,7 @@ async function loadMusic() {
 
   try {
     const result = await musicAPI.list(null, 100)
-    songs.value = result.music_list || []
+    songs.value = sortSongsByReliability(result.music_list || [])
     if (currentIndex.value >= songs.value.length) {
       currentIndex.value = 0
     }
@@ -167,6 +184,11 @@ async function loadMusic() {
   }
 }
 
+async function playThroughPlayer(index) {
+  await nextTick()
+  await playerRef.value?.playIndex?.(index)
+}
+
 function loadLikedSongs() {
   try {
     likedSongs.value = JSON.parse(localStorage.getItem(likedSongsStorageKey) || '[]')
@@ -177,7 +199,11 @@ function loadLikedSongs() {
 }
 
 function saveLikedSongs() {
-  localStorage.setItem(likedSongsStorageKey, JSON.stringify(likedSongs.value.slice(0, 50)))
+  const serializable = likedSongs.value.slice(0, 50).map(song => ({
+    ...song,
+    previewUrl: null,
+  }))
+  localStorage.setItem(likedSongsStorageKey, JSON.stringify(serializable))
 }
 
 function openFilePicker() {
@@ -190,56 +216,66 @@ async function handleFileChange(event) {
   event.target.value = ''
   if (!file) return
 
-  const allowedMimePrefix = 'audio/'
-  if (file.type && !file.type.startsWith(allowedMimePrefix)) {
-    uploadMessage.value = '请选择音频文件后再上传。'
+  if (file.type && !file.type.startsWith('audio/')) {
+    uploadMessage.value = '请选择音频文件。'
     return
   }
 
   const formData = new FormData()
   formData.append('file', file)
   formData.append('title', file.name.replace(/\.[^.]+$/, ''))
-  formData.append('artist', '本地上传')
+  formData.append('artist', '本地导入')
 
   uploading.value = true
   uploadMessage.value = '正在上传...'
 
   try {
     const uploadedSong = await musicAPI.upload(formData)
-    uploadMessage.value = '上传成功，已加入播放列表。'
-
-    const exists = songs.value.some(song => song.id === uploadedSong.id && song.url === uploadedSong.url)
-    if (!exists) {
-      songs.value = [uploadedSong, ...songs.value]
-      currentIndex.value = 0
+    const previewUrl = URL.createObjectURL(file)
+    const playableSong = {
+      ...uploadedSong,
+      previewUrl,
+      source: 'uploaded',
     }
+
+    const exists = songs.value.some(song => song.id === playableSong.id && song.url === playableSong.url)
+    songs.value = exists
+      ? songs.value.map(song => (song.id === playableSong.id && song.url === playableSong.url ? playableSong : song))
+      : sortSongsByReliability([playableSong, ...songs.value])
+
+    currentIndex.value = songs.value.findIndex(song => song.id === playableSong.id && song.url === playableSong.url)
+    uploadMessage.value = '上传完成，这首音乐已经可以播放。'
     playbackError.value = ''
+    await playThroughPlayer(currentIndex.value)
   } catch (err) {
     console.error('Failed to upload music:', err)
     uploadMessage.value =
       err?.response?.data?.detail ||
       err?.response?.data?.message ||
-      '上传失败，请确认文件是音频格式且大小不超过 30MB。'
+      '上传失败，请确认文件是音频格式且小于 12 MB。'
   } finally {
     uploading.value = false
   }
 }
 
-function playSong(index) {
+async function playSong(index) {
   currentIndex.value = index
   playbackError.value = ''
   feedbackMessage.value = ''
+  await playThroughPlayer(index)
 }
 
-function playLikedSong(song) {
+async function playLikedSong(song) {
   const existingIndex = songs.value.findIndex(item => item.id === song.id && item.url === song.url)
   if (existingIndex !== -1) {
-    playSong(existingIndex)
+    await playSong(existingIndex)
     return
   }
 
-  songs.value = [song, ...songs.value]
-  playSong(0)
+  songs.value = sortSongsByReliability([song, ...songs.value])
+  currentIndex.value = 0
+  playbackError.value = ''
+  await playThroughPlayer(0)
 }
 
 function handleSongChange(song) {
@@ -264,8 +300,8 @@ async function handlePlaybackStarted(song) {
 
 async function handlePlaybackError(payload) {
   const song = payload?.song || currentSong.value
-  const reason = payload?.message || '暂时无法播放'
-  playbackError.value = `${song?.title || '当前音乐'} ${reason}，请尝试切换其他曲目。`
+  const reason = payload?.message || '播放失败'
+  playbackError.value = `${song?.title || '当前音乐'}暂时无法播放：${reason}。`
   await submitFeedback('play_failed', song, false)
 }
 
@@ -286,7 +322,7 @@ async function submitFeedback(action, song = currentSong.value, showError = true
   } catch (err) {
     console.error('Failed to submit music feedback:', err)
     if (showError) {
-      feedbackMessage.value = '反馈暂时保存失败，请稍后再试。'
+      feedbackMessage.value = '这次反馈暂时没有保存成功。'
     }
     return false
   } finally {
@@ -306,7 +342,7 @@ async function likeCurrentSong() {
     likedSongs.value = [song, ...likedSongs.value]
     saveLikedSongs()
   }
-  feedbackMessage.value = '已加入喜欢列表。'
+  feedbackMessage.value = '已加入我喜欢的音乐。'
 }
 
 async function dislikeCurrentSong() {
@@ -314,7 +350,7 @@ async function dislikeCurrentSong() {
   if (!song) return
 
   await submitFeedback('disliked', song, true)
-  feedbackMessage.value = '这首歌已跳过。'
+  feedbackMessage.value = '已跳过这首音乐。'
   if (songs.value.length > 1) {
     currentIndex.value = currentIndex.value < songs.value.length - 1 ? currentIndex.value + 1 : 0
   }
@@ -362,7 +398,7 @@ onMounted(() => {
 }
 
 .icon-button {
-  min-width: 64px;
+  min-width: 80px;
   height: 40px;
   border: 0;
   border-radius: 999px;
@@ -507,7 +543,7 @@ onMounted(() => {
   width: 100%;
   min-height: 62px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   padding: 10px;
@@ -523,14 +559,14 @@ onMounted(() => {
 }
 
 .song-index {
-  width: 34px;
+  min-width: 34px;
   height: 34px;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: #eff6ff;
   color: #2563eb;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
 }
 

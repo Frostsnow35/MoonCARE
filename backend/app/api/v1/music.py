@@ -26,7 +26,8 @@ router = APIRouter(prefix="/music", tags=["音乐疗愈"])
 
 MUSIC_DIR = Path(__file__).resolve().parents[3] / "music"
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"}
-MAX_UPLOAD_BYTES = 30 * 1024 * 1024
+MAX_MOBILE_PLAYBACK_BYTES = 12 * 1024 * 1024
+MAX_UPLOAD_BYTES = MAX_MOBILE_PLAYBACK_BYTES
 ALLOWED_FEEDBACK_ACTIONS = {"played", "completed", "liked", "disliked", "skipped", "play_failed"}
 
 
@@ -123,6 +124,21 @@ def _local_music_candidates(requested_emotion: Optional[str] = None) -> List[Mus
     for index, filename in enumerate(filenames):
         suffix = Path(filename).suffix.lower()
         if suffix not in AUDIO_EXTENSIONS:
+            continue
+
+        file_path = MUSIC_DIR / filename
+        try:
+            file_size = file_path.stat().st_size
+        except OSError as exc:
+            logger.warning("Cannot stat music file %s: %s", file_path, exc)
+            continue
+
+        if file_size > MAX_MOBILE_PLAYBACK_BYTES:
+            logger.info(
+                "Skipping oversized local music for mobile playback: %s (%s bytes)",
+                filename,
+                file_size,
+            )
             continue
 
         category = _infer_local_category(filename)

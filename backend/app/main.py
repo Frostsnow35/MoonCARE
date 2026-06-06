@@ -46,6 +46,21 @@ FRONTEND_RESERVED_PATHS = {
 }
 
 
+class SelectiveGZipMiddleware:
+    """Skip gzip for static audio routes that are consumed by mobile native playback."""
+
+    def __init__(self, app, minimum_size: int = 1000):
+        self.app = app
+        self.gzip_app = GZipMiddleware(app, minimum_size=minimum_size)
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and str(scope.get("path", "")).startswith("/media/music"):
+            await self.app(scope, receive, send)
+            return
+
+        await self.gzip_app(scope, receive, send)
+
+
 def _is_reserved_frontend_path(full_path: str) -> bool:
     """Return True for backend/API paths that must not fall through to Vue."""
     first_segment = full_path.lstrip("/").split("/", 1)[0]
@@ -123,7 +138,7 @@ else:
 
 # GZip compression middleware
 if settings.ENABLE_GZIP_COMPRESSION:
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(SelectiveGZipMiddleware, minimum_size=1000)
     print("[Config] GZip compression enabled")
 
 # CORS configuration

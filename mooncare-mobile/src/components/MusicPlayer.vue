@@ -1,8 +1,16 @@
 <template>
   <div class="music-player">
+    <audio
+      ref="audioRef"
+      class="native-audio-probe"
+      playsinline
+      webkit-playsinline="true"
+      preload="metadata"
+    ></audio>
+
     <div v-if="currentSong" class="current-song">
       <div class="disc" :class="{ spinning: isPlaying }">
-        <span>{{ getSongEmoji(currentSong.emotion_category) }}</span>
+        <span>{{ getSongMark(currentSong.emotion_category) }}</span>
       </div>
 
       <div class="song-meta">
@@ -31,22 +39,22 @@
       </div>
     </div>
 
-    <div class="controls" aria-label="音乐播放控制">
+    <div class="controls" aria-label="Music playback controls">
       <button type="button" class="control-button" aria-label="上一首" @click="playPrevious">
-        <span>◀</span>
+        <span>&lt;</span>
       </button>
 
       <button type="button" class="play-button" :aria-label="isPlaying ? '暂停' : '播放'" @click="togglePlay">
-        <span>{{ isPlaying ? '❚❚' : '▶' }}</span>
+        <span>{{ isPlaying ? '||' : '>' }}</span>
       </button>
 
       <button type="button" class="control-button" aria-label="下一首" @click="playNext">
-        <span>▶</span>
+        <span>&gt;</span>
       </button>
     </div>
 
     <div class="volume-row">
-      <span class="volume-icon">低</span>
+      <span class="volume-icon">L</span>
       <input
         v-model="volume"
         type="range"
@@ -56,13 +64,15 @@
         aria-label="音量"
         @input="updateVolume"
       />
-      <span class="volume-icon">高</span>
+      <span class="volume-icon">H</span>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import { getBackendOrigin } from '../services/apiConfig'
 
 const props = defineProps({
   songs: {
@@ -86,35 +96,35 @@ const emit = defineEmits([
   'playbackStarted',
 ])
 
-const audio = new Audio()
-audio.preload = 'metadata'
-audio.playsInline = true
-
+const audioRef = ref(null)
 const currentIndex = ref(0)
 const isPlaying = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 const volume = ref(70)
 const seekPercent = ref(0)
-
-audio.volume = volume.value / 100
+const generatedObjectUrls = ref(new Set())
 
 const currentSong = computed(() => props.songs[currentIndex.value] || null)
+
+function getAudio() {
+  return audioRef.value
+}
 
 const progress = computed(() => {
   if (!duration.value) return 0
   return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
 })
 
-function getSongEmoji(category) {
-  const emojis = {
-    joy: '♪',
-    normal: '♫',
-    anxiety: '◌',
-    sadness: '♩',
-    calm: '♬',
+function getSongMark(category) {
+  const marks = {
+    joy: '悦',
+    normal: '柔',
+    anxiety: '缓',
+    sadness: '安',
+    calm: '静',
   }
-  return emojis[category] || '♫'
+  return marks[category] || '乐'
 }
 
 function formatTime(seconds) {
@@ -129,41 +139,179 @@ function emitPlaybackState(playing) {
   emit('playStateChange', playing)
 }
 
+function describeMediaError(eventOrError) {
+  const audio = getAudio()
+  const mediaError = audio?.error
+
+  if (mediaError?.code === 1) return '播放被中断'
+  if (mediaError?.code === 2) return '音频下载失败'
+  if (mediaError?.code === 3) return '音频解码失败'
+  if (mediaError?.code === 4) return '设备暂不支持这种音频格式'
+
+  return eventOrError?.message || '当前暂时无法播放这首音乐'
+}
+
 function reportPlaybackError(error) {
   emitPlaybackState(false)
   emit('playbackError', {
     song: currentSong.value,
-    message: error?.message || '音频暂时无法播放',
+    message: describeMediaError(error),
   })
 }
 
-function loadCurrentSong() {
-  if (!currentSong.value?.url) {
-    audio.removeAttribute('src')
-    audio.load()
-    currentTime.value = 0
-    duration.value = 0
-    seekPercent.value = 0
-    return
+function revokeObjectUrl() {
+  generatedObjectUrls.value.forEach(url => URL.revokeObjectURL(url))
+  generatedObjectUrls.value.clear()
+}
+
+function isBackendHosted(url) {
+  if (!url) return false
+  return url.startsWith(getBackendOrigin())
+}
+
+function inferMimeType(url) {
+  const normalized = String(url || '').toLowerCase()
+  if (normalized.endsWith('.mp3')) return 'audio/mpeg'
+  if (normalized.endsWith('.wav')) return 'audio/wav'
+  if (normalized.endsWith('.ogg')) return 'audio/ogg'
+  if (normalized.endsWith('.m4a')) return 'audio/mp4'
+  if (normalized.endsWith('.aac')) return 'audio/aac'
+  if (normalized.endsWith('.flac')) return 'audio/flac'
+  return 'audio/mpeg'
+}
+
+function base64ToBlob(base64, mimeType) {
+  const cleanBase64 = String(base64 || '').replace(/^data:[^;]+;base64,/, '')
+  const binary = atob(cleanBase64)
+  const bytes = new Uint8Array(binary.length)
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
   }
 
-  if (audio.src !== currentSong.value.url) {
-    audio.src = currentSong.value.url
+  return new Blob([bytes], { type: mimeType })
+}
+
+function registerPlayableObjectUrl(blob) {
+  const objectUrl = URL.createObjectURL(blob)
+  generatedObjectUrls.value.add(objectUrl)
+  return objectUrl
+}
+
+async function fetchNativeAudioBlob(sourceUrl) {
+  const response = await CapacitorHttp.get({
+    url: sourceUrl,
+    responseType: 'blob',
+    readTimeout: 15000,
+    connectTimeout: 10000,
+    shouldEncodeUrlParams: false,
+  })
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Audio request failed (${response.status})`)
   }
+
+  const contentType =
+    response.headers?.['content-type'] ||
+    response.headers?.['Content-Type'] ||
+    inferMimeType(sourceUrl)
+
+  if (response.data instanceof Blob) {
+    return response.data
+  }
+
+  if (typeof response.data === 'string') {
+    return base64ToBlob(response.data, contentType)
+  }
+
+  throw new Error('Native audio response could not be parsed')
+}
+
+async function resolvePlayableUrl(song) {
+  const sourceUrl = song?.previewUrl || song?.url || ''
+  if (!sourceUrl) return ''
+
+  if (!isBackendHosted(sourceUrl)) {
+    return sourceUrl
+  }
+
+  if (song.__resolvedPlayableUrl) {
+    return song.__resolvedPlayableUrl
+  }
+
+  const blob = Capacitor.isNativePlatform()
+    ? await fetchNativeAudioBlob(sourceUrl)
+    : await (async () => {
+        const response = await fetch(sourceUrl, {
+          method: 'GET',
+          cache: 'no-store',
+        })
+
+        if (!response.ok) {
+          throw new Error(`Audio request failed (${response.status})`)
+        }
+
+        return response.blob()
+      })()
+
+  song.__resolvedPlayableUrl = registerPlayableObjectUrl(blob)
+  return song.__resolvedPlayableUrl
+}
+
+function clearLoadedSong() {
+  const audio = getAudio()
+  if (!audio) return
+  audio.removeAttribute('src')
+  audio.dataset.songUrl = ''
   audio.load()
+  currentTime.value = 0
+  duration.value = 0
+  seekPercent.value = 0
+}
+
+function prepareSongState() {
   currentTime.value = 0
   duration.value = 0
   seekPercent.value = 0
   emit('songChange', currentSong.value)
 }
 
+async function ensureSongLoaded() {
+  const audio = getAudio()
+  if (!audio) return false
+
+  if (!currentSong.value?.url && !currentSong.value?.previewUrl) {
+    clearLoadedSong()
+    return false
+  }
+
+  if (audio.dataset.songUrl === currentSong.value.url && audio.src) {
+    return true
+  }
+
+  const playableUrl = await resolvePlayableUrl(currentSong.value)
+  audio.src = playableUrl
+  audio.dataset.songUrl = currentSong.value.url || currentSong.value.previewUrl || ''
+  audio.load()
+  return true
+}
+
+async function primeCurrentSong() {
+  try {
+    await ensureSongLoaded()
+  } catch (error) {
+    reportPlaybackError(error)
+  }
+}
+
 async function startPlayback() {
-  if (!currentSong.value?.url) return
+  const audio = getAudio()
+  if (!audio) return
+  if (!currentSong.value) return
 
   try {
-    if (audio.src !== currentSong.value.url) {
-      loadCurrentSong()
-    }
+    const loaded = await ensureSongLoaded()
+    if (!loaded) return
     await audio.play()
     emitPlaybackState(true)
     emit('playbackStarted', currentSong.value)
@@ -172,7 +320,29 @@ async function startPlayback() {
   }
 }
 
+async function playIndex(index) {
+  if (index < 0 || index >= props.songs.length) return
+  const audio = getAudio()
+
+  if (currentIndex.value !== index) {
+    currentIndex.value = index
+    clearLoadedSong()
+    prepareSongState()
+  } else if (!audio?.src) {
+    prepareSongState()
+  }
+
+  await startPlayback()
+}
+
+async function playCurrent() {
+  if (!currentSong.value) return
+  await startPlayback()
+}
+
 function pausePlayback() {
+  const audio = getAudio()
+  if (!audio) return
   audio.pause()
   emitPlaybackState(false)
 }
@@ -189,12 +359,14 @@ function togglePlay() {
 function setIndex(index, shouldPlay = false) {
   if (index < 0 || index >= props.songs.length) return
   currentIndex.value = index
-  loadCurrentSong()
+  clearLoadedSong()
+  prepareSongState()
 
   if (shouldPlay || props.autoPlay) {
     startPlayback()
   } else {
     emitPlaybackState(false)
+    primeCurrentSong()
   }
 }
 
@@ -211,15 +383,21 @@ function playPrevious(forcePlay = isPlaying.value) {
 }
 
 function updateVolume() {
+  const audio = getAudio()
+  if (!audio) return
   audio.volume = volume.value / 100
 }
 
 function handleTimeUpdate() {
+  const audio = getAudio()
+  if (!audio) return
   currentTime.value = audio.currentTime
   seekPercent.value = progress.value
 }
 
 function handleLoadedMetadata() {
+  const audio = getAudio()
+  if (!audio) return
   duration.value = Number.isFinite(audio.duration) ? audio.duration : 0
   seekPercent.value = progress.value
 }
@@ -240,7 +418,7 @@ watch(
     if (!newSongs.length) {
       pausePlayback()
       currentIndex.value = 0
-      loadCurrentSong()
+      clearLoadedSong()
       return
     }
 
@@ -254,11 +432,15 @@ watch(
   () => props.selectedIndex,
   (index, previousIndex) => {
     if (index === previousIndex || !props.songs.length) return
-    setIndex(index, true)
+    setIndex(index, false)
   },
 )
 
 onMounted(() => {
+  const audio = getAudio()
+  if (!audio) return
+
+  audio.volume = volume.value / 100
   audio.addEventListener('timeupdate', handleTimeUpdate)
   audio.addEventListener('loadedmetadata', handleLoadedMetadata)
   audio.addEventListener('ended', handleEnded)
@@ -266,11 +448,21 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  const audio = getAudio()
+  if (!audio) return
   audio.pause()
+  revokeObjectUrl()
   audio.removeEventListener('timeupdate', handleTimeUpdate)
   audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
   audio.removeEventListener('ended', handleEnded)
   audio.removeEventListener('error', reportPlaybackError)
+})
+
+defineExpose({
+  playCurrent,
+  playIndex,
+  primeCurrentSong,
+  pausePlayback,
 })
 </script>
 
@@ -278,6 +470,14 @@ onUnmounted(() => {
 .music-player {
   display: grid;
   gap: 16px;
+}
+
+.native-audio-probe {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
 }
 
 .current-song {
@@ -297,6 +497,7 @@ onUnmounted(() => {
   box-shadow: 0 14px 26px rgba(244, 114, 182, 0.26);
   color: #ffffff;
   font-size: 26px;
+  font-weight: 800;
 }
 
 .spinning {
@@ -382,6 +583,7 @@ onUnmounted(() => {
   background: #dbeafe;
   color: #2563eb;
   font-size: 18px;
+  font-weight: 800;
 }
 
 .play-button {
@@ -391,6 +593,7 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #ec4899 0%, #2563eb 100%);
   box-shadow: 0 16px 28px rgba(37, 99, 235, 0.2);
   font-size: 24px;
+  font-weight: 800;
 }
 
 .control-button:active,
@@ -409,6 +612,7 @@ onUnmounted(() => {
   text-align: center;
   color: #64748b;
   font-size: 12px;
+  font-weight: 700;
 }
 
 .volume-slider {

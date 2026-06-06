@@ -2,5 +2,10 @@
   "appId": "com.mooncare.mobile",
   "appName": "MoonCAREMobile",
   "webDir": "dist",
-  "allowMixedContent": true
+  "allowMixedContent": true,
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }
