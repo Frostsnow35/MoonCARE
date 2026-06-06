@@ -32,22 +32,22 @@ function normalizeMessage(raw = {}) {
 export const useChatStore = defineStore('chat', () => {
   const AGENT_PROFILES = {
     auto: {
-      label: '自动模式',
+      label: 'MoonCARE 陪伴',
       shortLabel: '自动',
-      helper: '自动衔接倾听、知识解释和经期照护建议',
-      welcome: '我先在这里陪你。你可以随便说一点今天的感受，也可以问身体变化或怎么照顾自己。我们慢慢来，不急着整理清楚。'
+      helper: '自动承接倾诉、周期困惑和轻量照护建议。',
+      welcome: '我先在这里陪你。你可以说说今天的情绪、身体感受，或者最近周期里的变化。'
     },
     support: {
-      label: '情绪宝宝',
+      label: '温柔陪伴',
       shortLabel: '陪伴',
-      helper: '适合倾诉、安抚和轻量照护计划',
-      welcome: '我在。你不用整理得很清楚，先把此刻最重的一点说出来就好。我会慢慢陪你听，也可以一起安排一点今天能做到的照顾。'
+      helper: '适合倾诉、安抚和一起整理此刻最难受的地方。',
+      welcome: '不急着说得很完整，你先把现在最重的那一点放下来，我会陪你慢慢聊。'
     },
     knowledge: {
-      label: '知识宝宝',
-      shortLabel: '知识',
-      helper: '适合了解 PMS、周期、痛经和经期健康知识',
-      welcome: '你好，我是知识宝宝。你可以问我经前情绪、周期变化、痛经或 PMS 相关问题，我会用容易理解的方式回答，并给出可尝试的小建议；内容仅供参考，不作为诊断。'
+      label: '周期解释',
+      shortLabel: '解释',
+      helper: '适合了解经前情绪、周期变化和日常照护方式，仅供参考。',
+      welcome: '如果你想了解经前情绪、周期变化或日常照护，我会尽量用自然、好理解的方式解释给你。'
     }
   }
 
@@ -84,8 +84,7 @@ export const useChatStore = defineStore('chat', () => {
       actions
     })
     messages.value.push(normalized)
-    const msgId = normalized.id
-    return msgId
+    return normalized.id
   }
 
   function updateMessage(messageId, content) {
@@ -125,7 +124,7 @@ export const useChatStore = defineStore('chat', () => {
     if (message.role === 'user') {
       const messagesToRemove = [messageId]
 
-      let nextIndex = index + 1
+      const nextIndex = index + 1
       if (nextIndex < messages.value.length) {
         const nextMessage = messages.value[nextIndex]
         if (nextMessage.role === 'assistant') {
@@ -146,18 +145,17 @@ export const useChatStore = defineStore('chat', () => {
 
   async function getTodayDiaryGreeting() {
     try {
-      const token = localStorage.getItem('access_token')
-      if (!token) return null
+      if (!localStorage.getItem('access_token')) return null
 
       const data = await diaryAPI.today?.()
       if (!data?.has_diary || !data?.content) return null
 
       const content = data.content
       const greetings = [
-        { keywords: ['开心', '高兴', '快乐', '愉快', '幸福', '兴奋'], text: '看到你今天心情不错呀。有什么想分享的吗？我在这里陪你聊聊。' },
-        { keywords: ['烦躁', '焦虑', '不安', '紧张', '担心', '压力'], text: '我注意到你今天有些紧绷。愿意说说发生了什么吗？我在这里陪你。' },
-        { keywords: ['难过', '伤心', '失落', '沮丧', '痛苦'], text: '看到你今天心情不太好，我在这里陪着你。想说什么都可以。' },
-        { keywords: ['累', '疲惫', '困', '无力', '疲劳'], text: '感觉你今天有些疲惫，先休息一下也好；想聊的时候我在。' }
+        { keywords: ['开心', '高兴', '快乐', '愉快', '幸福', '兴奋'], text: '看到你今天心情不错呀。想继续把这份轻松留住的话，我也可以陪你聊聊。' },
+        { keywords: ['烦躁', '焦虑', '不安', '紧张', '担心', '压力'], text: '我注意到你今天有些紧绷。愿意说说发生了什么吗？我会先陪你把情绪放下来。' },
+        { keywords: ['难过', '伤心', '失落', '沮丧', '痛苦'], text: '看到你今天心情不太好，我在这里陪着你。想从哪里说起都可以。' },
+        { keywords: ['累', '疲惫', '困', '无力', '疲劳'], text: '感觉你今天有些疲惫，先慢一点也没关系；想聊的时候我在。' }
       ]
 
       return greetings.find(item => item.keywords.some(keyword => content.includes(keyword)))?.text || null
@@ -266,8 +264,8 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const stored = localStorage.getItem(getChatStorageKey())
       if (!stored) return false
-      const data = JSON.parse(stored)
 
+      const data = JSON.parse(stored)
       sessionId.value = data.sessionId || null
       messages.value = Array.isArray(data.messages) ? data.messages.map(normalizeMessage) : []
       agentMode.value = data.agentMode || 'auto'

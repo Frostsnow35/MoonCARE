@@ -1,11 +1,11 @@
 <template>
-  <div class="chat-page">
-    <div class="max-w-lg mx-auto pb-16">
-      <header class="px-4 pt-4 pb-3">
+  <div class="app-page">
+    <div class="page-content chat-shell">
+      <header class="page-card-soft p-4">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-full bg-pink-100 flex items-center justify-center shrink-0">
-              <svg class="w-8 h-8" viewBox="0 0 40 40" aria-hidden="true">
+          <div class="min-w-0 flex items-center gap-3">
+            <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-pink-100">
+              <svg class="h-8 w-8" viewBox="0 0 40 40" aria-hidden="true">
                 <circle cx="20" cy="20" r="18" fill="#FFE4EC" />
                 <path d="M11 23c2.7 5.4 15.3 5.4 18 0 2-4.1-.6-10.5-9-10.5S9 18.9 11 23Z" fill="#F9A8C7" />
                 <circle cx="15" cy="20" r="2" fill="#4B3A46" />
@@ -13,64 +13,40 @@
                 <path d="M17 25c1.8 1.2 4.2 1.2 6 0" stroke="#4B3A46" stroke-width="1.8" stroke-linecap="round" />
               </svg>
             </div>
-            <div v-if="chatStore.agentMode !== 'auto'" class="min-w-0">
-              <h1 class="text-lg font-bold text-gray-800 leading-tight">{{ chatStore.activeAgent.label }}</h1>
-              <p class="text-xs text-gray-500 truncate">{{ chatStore.activeAgent.helper }}</p>
-              <p v-if="memoryStatusText" class="text-[11px] text-pink-500 truncate">{{ memoryStatusText }}</p>
+            <div class="min-w-0">
+              <p class="section-label">聊天</p>
+              <h1 class="mt-2 text-lg font-semibold leading-tight text-slate-800">{{ headerTitle }}</h1>
+              <p class="mt-1 truncate text-xs text-slate-500">{{ headerSubtitle }}</p>
+              <p v-if="memoryStatusText" class="mt-1 truncate text-[11px] text-pink-500">{{ memoryStatusText }}</p>
             </div>
           </div>
-          <div class="flex items-center gap-1">
+
+          <div class="flex items-center gap-2">
             <button
               type="button"
-              class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-pink-50 transition-colors"
-              @click="showMoreMenu = !showMoreMenu"
-              title="更多选项"
+              class="icon-button h-10 w-10 min-w-10 shadow-none"
+              title="历史会话"
+              @click="openSessionList"
             >
-              <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+              <svg class="h-5 w-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="icon-button h-10 w-10 min-w-10 shadow-none"
+              title="新建会话"
+              @click="startNewSession"
+            >
+              <svg class="h-5 w-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
               </svg>
             </button>
           </div>
         </div>
-        <div
-          v-if="showMoreMenu"
-          class="mt-2 py-2 bg-white rounded-2xl shadow-lg border border-gray-100 animate-fadeIn"
-        >
-          <button
-            type="button"
-            class="w-full flex items-center gap-3 px-4 py-3 hover:bg-pink-50 transition-colors text-left"
-            @click="startNewSession"
-          >
-            <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            <span class="text-sm text-gray-700">新建会话</span>
-          </button>
-          <button
-            type="button"
-            class="w-full flex items-center gap-3 px-4 py-3 hover:bg-pink-50 transition-colors text-left"
-            @click="openSessionList"
-          >
-            <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-            <span class="text-sm text-gray-700">历史会话</span>
-          </button>
-          <button
-            v-if="messages.length > 0"
-            type="button"
-            class="w-full flex items-center gap-3 px-4 py-3 hover:bg-pink-50 transition-colors text-left"
-            @click="clearChat"
-          >
-            <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            <span class="text-sm text-gray-700">清空当前会话</span>
-          </button>
-        </div>
       </header>
 
-      <section class="px-4 mt-3">
+      <section class="chat-messages">
         <div ref="messagesContainer" class="chat-window">
           <article
             v-for="msg in messages"
@@ -86,11 +62,13 @@
             >
               <p
                 v-if="!shouldRenderMarkdown(msg)"
-                class="text-sm leading-relaxed whitespace-pre-wrap break-words"
-              >{{ msg.content }}</p>
+                class="break-words whitespace-pre-wrap text-sm leading-relaxed"
+              >
+                {{ msg.content }}
+              </p>
               <div
                 v-else
-                class="text-sm leading-relaxed break-words markdown-content"
+                class="markdown-content break-words text-sm leading-relaxed"
                 v-html="renderMarkdown(msg.content)"
               ></div>
 
@@ -103,7 +81,7 @@
                   v-for="suggestion in msg.suggestions"
                   :key="suggestion"
                   type="button"
-                  class="min-h-9 px-3 text-xs rounded-full bg-pink-50 text-pink-600 border border-pink-100 active:scale-95"
+                  class="min-h-9 rounded-full border border-pink-100 bg-pink-50 px-3 text-xs text-pink-600 active:scale-95"
                   @click="handleSuggestion(suggestion)"
                 >
                   {{ suggestion }}
@@ -119,7 +97,7 @@
                   v-for="action in msg.actions"
                   :key="action.action"
                   type="button"
-                  class="min-h-9 px-3 text-xs rounded-full bg-gradient-to-r from-blue-50 to-purple-50 text-blue-600 border border-blue-100 active:scale-95 hover:shadow-sm transition-shadow"
+                  class="min-h-9 rounded-full border border-blue-100 bg-gradient-to-r from-blue-50 to-purple-50 px-3 text-xs text-blue-600 transition-shadow hover:shadow-sm active:scale-95"
                   :title="action.description"
                   @click="handleAction(action)"
                 >
@@ -128,7 +106,7 @@
               </div>
 
               <time
-                class="text-[11px] mt-1 block"
+                class="mt-1 block text-[11px]"
                 :class="msg.role === 'user' ? 'text-pink-100' : 'text-gray-400'"
                 :datetime="msg.timestamp"
               >
@@ -138,7 +116,7 @@
           </article>
 
           <div v-if="isTyping" class="flex justify-start animate-fadeIn">
-            <div class="bg-white border border-gray-100 rounded-2xl rounded-bl-md px-3 py-2 shadow-sm">
+            <div class="rounded-2xl rounded-bl-md border border-gray-100 bg-white px-3 py-2 shadow-sm">
               <div class="flex items-center gap-2" aria-label="正在回复">
                 <div class="flex gap-1">
                   <span class="typing-dot" style="animation-delay: 0ms"></span>
@@ -152,13 +130,13 @@
         </div>
       </section>
 
-      <section v-if="errorText" class="px-4 mt-4">
-        <div class="flex items-center justify-between gap-3 bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-700">
+      <section v-if="errorText">
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-700">
           <span class="leading-relaxed">{{ errorText }}</span>
           <button
             v-if="lastRetryMessage"
             type="button"
-            class="shrink-0 min-h-9 px-3 rounded-lg bg-white text-red-600"
+            class="min-h-9 shrink-0 rounded-lg bg-white px-3 text-red-600"
             @click="retryLastMessage"
           >
             重试
@@ -166,8 +144,8 @@
         </div>
       </section>
 
-      <section class="px-4 mt-6">
-        <form class="bg-white rounded-xl border border-gray-200 shadow-sm p-2" @submit.prevent="sendMessage()">
+      <section class="chat-composer">
+        <form class="rounded-xl border border-gray-200 bg-white p-2 shadow-sm" @submit.prevent="sendMessage()">
           <div class="relative flex items-end gap-2">
             <div v-if="showModeMenu" class="mode-menu">
               <button
@@ -182,22 +160,20 @@
                 <small>{{ profile.helper }}</small>
               </button>
             </div>
+
             <button
               type="button"
               class="mode-plus"
-              aria-label="选择聊天模式"
               :aria-expanded="showModeMenu"
+              aria-label="选择聊天模式"
               @click="toggleModeMenu"
             >
               +
             </button>
-            <button
-              type="button"
-              class="mode-current"
-              @click="toggleModeMenu"
-            >
+            <button type="button" class="mode-current" @click="toggleModeMenu">
               {{ chatStore.agentMode === 'auto' ? '自动' : chatStore.activeAgent.shortLabel }}
             </button>
+
             <label class="sr-only" for="chat-input">输入消息</label>
             <textarea
               id="chat-input"
@@ -206,19 +182,20 @@
               :disabled="isBusy"
               rows="1"
               maxlength="800"
-              class="flex-1 min-h-11 max-h-28 resize-none border-0 outline-none px-2 py-2 text-base leading-relaxed text-gray-800 placeholder:text-gray-400"
+              class="min-h-11 max-h-28 flex-1 resize-none border-0 px-2 py-2 text-base leading-relaxed text-gray-800 outline-none placeholder:text-gray-400"
               placeholder="慢慢说，我在听..."
               @input="resizeInput"
               @keydown.enter.exact.prevent="sendMessage()"
             ></textarea>
+
             <button
               type="submit"
-              class="w-11 h-11 rounded-lg flex items-center justify-center transition-colors active:scale-95"
+              class="flex h-11 w-11 items-center justify-center rounded-lg transition-colors active:scale-95"
               :class="canSend ? 'bg-pink-500 text-white' : 'bg-gray-100 text-gray-400'"
               :disabled="!canSend"
               aria-label="发送消息"
             >
-              <svg class="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 12 20 4l-4 16-4-6-8-2Z" fill="currentColor" opacity=".92" />
                 <path d="m12 14 8-10" stroke="white" stroke-width="1.8" stroke-linecap="round" />
               </svg>
@@ -229,89 +206,101 @@
     </div>
 
     <div v-if="showSessionList" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30" @click.self="showSessionList = false">
-      <div class="bg-white rounded-2xl w-full max-w-sm mx-4 max-h-[70vh] flex flex-col">
-        <div class="flex items-center justify-between p-4 border-b border-gray-100">
+      <div class="mx-4 flex max-h-[70vh] w-full max-w-sm flex-col rounded-2xl bg-white">
+        <div class="flex items-center justify-between border-b border-gray-100 p-4">
           <h3 class="text-base font-bold text-gray-800">历史会话</h3>
-          <button type="button" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100" @click="showSessionList = false">
-            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button type="button" class="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100" @click="showSessionList = false">
+            <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
+
         <div class="flex-1 overflow-y-auto p-2">
           <button
             type="button"
-            class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-pink-50 transition-colors text-left"
+            class="w-full rounded-xl p-3 text-left transition-colors hover:bg-pink-50"
             @click="startNewSession"
           >
-            <div class="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center shrink-0">
-              <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-              </svg>
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-gray-800">新建会话</p>
-              <p class="text-xs text-gray-400">开始一段新的对话</p>
+            <div class="flex items-center gap-3">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-pink-100">
+                <svg class="h-5 w-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-gray-800">新建会话</p>
+                <p class="text-xs text-gray-400">开始一段新的对话</p>
+              </div>
             </div>
           </button>
+
           <div v-if="sessionListLoading" class="flex items-center justify-center py-8">
             <div class="flex gap-1">
-              <span class="w-2 h-2 rounded-full bg-pink-400 animate-bounce" style="animation-delay: 0ms"></span>
-              <span class="w-2 h-2 rounded-full bg-pink-400 animate-bounce" style="animation-delay: 140ms"></span>
-              <span class="w-2 h-2 rounded-full bg-pink-400 animate-bounce" style="animation-delay: 280ms"></span>
+              <span class="h-2 w-2 animate-bounce rounded-full bg-pink-400" style="animation-delay: 0ms"></span>
+              <span class="h-2 w-2 animate-bounce rounded-full bg-pink-400" style="animation-delay: 140ms"></span>
+              <span class="h-2 w-2 animate-bounce rounded-full bg-pink-400" style="animation-delay: 280ms"></span>
             </div>
           </div>
-          <div v-else-if="sessionList.length === 0" class="text-center py-8 text-sm text-gray-400">
+
+          <div v-else-if="sessionList.length === 0" class="py-8 text-center text-sm text-gray-400">
             暂无历史会话
           </div>
+
           <button
             v-for="session in sessionList"
             v-else
             :key="session.session_id"
             type="button"
-            class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-pink-50 transition-colors text-left"
+            class="w-full rounded-xl p-3 text-left transition-colors hover:bg-pink-50"
             :class="session.session_id === chatStore.sessionId ? 'bg-pink-50' : ''"
             @click="loadSession(session.session_id)"
           >
-            <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center justify-between gap-2">
-                <p class="text-sm font-medium text-gray-800 truncate">{{ formatRelativeTime(session.last_message_at) }}</p>
-                <span v-if="session.session_id === chatStore.sessionId" class="text-xs text-pink-500 shrink-0">当前</span>
+            <div class="flex items-center gap-3">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100">
+                <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
               </div>
-              <p class="text-xs text-gray-400 truncate">{{ session.message_count ? `${session.message_count}条消息` : '暂无消息' }}</p>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="truncate text-sm font-medium text-gray-800">{{ formatRelativeTime(session.last_message_at) }}</p>
+                  <span v-if="session.session_id === chatStore.sessionId" class="shrink-0 text-xs text-pink-500">当前</span>
+                </div>
+                <p class="truncate text-xs text-gray-400">{{ session.message_count ? `${session.message_count} 条消息` : '暂无消息' }}</p>
+              </div>
             </div>
+          </button>
+        </div>
+
+        <div class="border-t border-gray-100 p-3">
+          <button type="button" class="ghost-button w-full" @click="clearChatAndClose">
+            清空当前会话
           </button>
         </div>
       </div>
     </div>
 
-    <BottomNav />
-
     <div
       v-if="showContextMenu"
-      class="fixed z-50 bg-white rounded-xl shadow-2xl border border-gray-200 py-2 min-w-[140px]"
+      class="fixed z-50 min-w-[140px] rounded-xl border border-gray-200 bg-white py-2 shadow-2xl"
       :style="{ left: `${contextMenuPosition.x}px`, top: `${contextMenuPosition.y}px` }"
       @click.stop
     >
       <button
-        class="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-pink-50 transition-colors"
+        class="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-pink-50"
         @click="copyMessage(selectedMessage)"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
         </svg>
         复制
       </button>
       <button
-        class="w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-pink-50 transition-colors"
+        class="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-pink-50"
         @click="revokeMessage(selectedMessage)"
       >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
         </svg>
@@ -321,7 +310,7 @@
 
     <div
       v-if="showCopyToast"
-      class="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50"
+      class="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-gray-800 px-4 py-2 text-sm text-white shadow-lg"
     >
       已复制到剪贴板
     </div>
@@ -331,11 +320,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { chatAPI } from '../api'
-import { useChatStore } from '../stores/chat'
-import BottomNav from '../components/BottomNav.vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { chatAPI } from '../api'
+import { useChatStore } from '../stores/chat'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -347,7 +335,6 @@ const inputEl = ref(null)
 const inputMessage = ref('')
 const localTyping = ref(false)
 const showModeMenu = ref(false)
-const showMoreMenu = ref(false)
 const lastRetryMessage = ref('')
 const hasAssistantStarted = ref(false)
 const showContextMenu = ref(false)
@@ -355,16 +342,22 @@ const contextMenuPosition = ref({ x: 0, y: 0 })
 const selectedMessage = ref(null)
 const showCopyToast = ref(false)
 
+const showSessionList = ref(false)
+const sessionList = ref([])
+const sessionListLoading = ref(false)
+
 const messages = computed(() => chatStore.messages)
 const isBusy = computed(() => chatStore.isAwaitingReply || localTyping.value)
 const isTyping = computed(() => isBusy.value && !hasAssistantStarted.value)
 const errorText = computed(() => chatStore.lastError)
 const canSend = computed(() => inputMessage.value.trim().length > 0 && !isBusy.value)
-const waitingText = computed(() => chatStore.agentMode === 'knowledge' ? '正在查找合适的解释...' : '正在组织回复...')
+const waitingText = computed(() => chatStore.agentMode === 'knowledge' ? '正在整理更合适的解释...' : '正在组织回复...')
+const headerTitle = computed(() => chatStore.agentMode === 'auto' ? 'MoonCARE 陪伴对话' : chatStore.activeAgent.label)
+const headerSubtitle = computed(() => chatStore.agentMode === 'auto' ? '先聊感受、身体变化和周期里的波动，再决定要不要继续细化。' : chatStore.activeAgent.helper)
 const memoryStatusText = computed(() => {
   if (!chatStore.memoryState?.has_memory && !chatStore.memoryState?.updated) return ''
-  if (chatStore.memoryState.updated) return '已延续你刚提到的状态'
-  return '延续上次聊到的状态'
+  if (chatStore.memoryState.updated) return '已延续你刚刚提到的状态'
+  return '继续上次聊到的状态'
 })
 
 watch(messages, async () => {
@@ -390,15 +383,11 @@ function formatRelativeTime(timestamp) {
   const diffDays = Math.floor(diffMs / 86400000)
 
   if (diffMins < 1) return '刚刚'
-  if (diffMins < 60) return `${diffMins}分钟前`
-  if (diffHours < 24) return `${diffHours}小时前`
-  if (diffDays < 7) return `${diffDays}天前`
+  if (diffMins < 60) return `${diffMins} 分钟前`
+  if (diffHours < 24) return `${diffHours} 小时前`
+  if (diffDays < 7) return `${diffDays} 天前`
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
-
-const showSessionList = ref(false)
-const sessionList = ref([])
-const sessionListLoading = ref(false)
 
 async function loadSessionList() {
   sessionListLoading.value = true
@@ -432,6 +421,13 @@ function startNewSession() {
   showSessionList.value = false
 }
 
+function clearChatAndClose() {
+  chatStore.clearMessages()
+  chatStore.clearAssessmentState()
+  chatStore.bootstrapConversation()
+  showSessionList.value = false
+}
+
 function selectMode(mode) {
   chatStore.setAgentMode(mode)
   showModeMenu.value = false
@@ -456,15 +452,13 @@ async function sendMessage(messageOverride = '') {
 
   try {
     chatStore.addMessage(text, 'user')
-
     chatStore.isAwaitingReply = true
     await sendStreamingMessage(text)
-    
   } catch (error) {
     console.error('Failed to send message:', error)
     lastRetryMessage.value = text
     chatStore.isConnected = false
-    chatStore.lastError = '连接有点不稳。你刚说的内容还在，我们可以继续围着它慢慢来。'
+    chatStore.lastError = '连接有点不稳。你刚才说的内容还在，我们可以继续围着它慢慢来。'
   } finally {
     localTyping.value = false
     chatStore.isAwaitingReply = false
@@ -563,7 +557,7 @@ function splitDisplayToken(token) {
   let current = ''
   for (const char of text) {
     current += char
-    if (current.length >= 8 || '。！？!?，,\n'.includes(char)) {
+    if (current.length >= 8 || '。！？；?\n'.includes(char)) {
       chunks.push(current)
       current = ''
     }
@@ -592,11 +586,11 @@ function buildClientContext(currentText = '') {
 function handleSuggestion(suggestion) {
   const text = {
     '我想倾诉一下': '我现在想倾诉一下',
-    '了解经前情绪': '我想了解为什么经前情绪会变得敏感或烦躁',
+    '了解经前情绪': '我想了解为什么经前情绪会变得敏感或低落',
     '来个呼吸练习': '我想做一个简单的呼吸练习',
-    '深呼吸': '我想试试深呼吸练习',
-    '散步': '我想出门走走',
-    '听音乐': '我想听点舒缓的音乐'
+    深呼吸: '我想试试深呼吸练习',
+    散步: '我想出门走走',
+    听音乐: '我想听点舒缓的音乐'
   }[suggestion] || suggestion
 
   inputMessage.value = text
@@ -618,18 +612,7 @@ function handleAction(action) {
   }
 }
 
-function clearChat() {
-  chatStore.clearMessages()
-  chatStore.clearAssessmentState()
-  chatStore.bootstrapConversation()
-}
-
-function dismissError() {
-  chatStore.lastError = ''
-}
-
 function openSessionList() {
-  showMoreMenu.value = false
   showSessionList.value = true
 }
 
@@ -731,32 +714,35 @@ watch(showSessionList, (newVal) => {
     loadSessionList()
   }
 })
-
 </script>
 
 <style scoped>
-.chat-page {
-  min-height: 100vh;
-  background: #f9fafb;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-page > .max-w-lg {
+.chat-shell {
   flex: 1;
   display: flex;
+  min-height: 0;
   flex-direction: column;
+  gap: 0.85rem;
+}
+
+.chat-messages {
+  flex: 1;
   min-height: 0;
 }
 
+.chat-composer {
+  position: sticky;
+  bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+
 .chat-window {
-  flex: 1;
+  display: flex;
   min-height: 400px;
   max-height: 60vh;
-  overflow-y: auto;
-  display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
   border: 1px solid #f3f4f6;
   border-radius: 16px;
   background: linear-gradient(180deg, #fff7fb 0%, #ffffff 62%);
@@ -836,10 +822,10 @@ watch(showSessionList, (newVal) => {
 
 .mode-menu-item {
   display: flex;
+  min-height: 48px;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  min-height: 48px;
   border: 0;
   border-radius: 10px;
   padding: 8px 10px;
@@ -864,10 +850,12 @@ watch(showSessionList, (newVal) => {
 }
 
 @keyframes typing {
-  0%, 100% {
-    opacity: .35;
+  0%,
+  100% {
+    opacity: 0.35;
     transform: translateY(0);
   }
+
   50% {
     opacity: 1;
     transform: translateY(-3px);
@@ -878,6 +866,12 @@ watch(showSessionList, (newVal) => {
   .chat-window {
     height: 32vh;
     min-height: 220px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .chat-composer {
+    bottom: 0;
   }
 }
 
@@ -915,8 +909,8 @@ watch(showSessionList, (newVal) => {
 
 .markdown-content :deep(ul),
 .markdown-content :deep(ol) {
-  margin-left: 1.5em;
   margin-bottom: 0.5em;
+  margin-left: 1.5em;
 }
 
 .markdown-content :deep(li) {
@@ -928,19 +922,19 @@ watch(showSessionList, (newVal) => {
 }
 
 .markdown-content :deep(code) {
+  border-radius: 0.25em;
   background: #fce7f3;
   padding: 0.125em 0.375em;
-  border-radius: 0.25em;
   font-size: 0.875em;
 }
 
 .markdown-content :deep(pre) {
-  background: #1f2937;
-  color: #f9fafb;
-  padding: 0.75em;
-  border-radius: 0.5em;
-  overflow-x: auto;
   margin-bottom: 0.5em;
+  overflow-x: auto;
+  border-radius: 0.5em;
+  background: #1f2937;
+  padding: 0.75em;
+  color: #f9fafb;
 }
 
 .markdown-content :deep(pre code) {
@@ -955,15 +949,15 @@ watch(showSessionList, (newVal) => {
 .markdown-content :deep(h4),
 .markdown-content :deep(h5),
 .markdown-content :deep(h6) {
-  font-weight: 600;
   margin-top: 0.75em;
   margin-bottom: 0.5em;
+  font-weight: 600;
 }
 
 .markdown-content :deep(blockquote) {
+  margin-left: 0;
   border-left: 3px solid #ec4899;
   padding-left: 1em;
-  margin-left: 0;
   color: #6b7280;
 }
 </style>

@@ -583,55 +583,49 @@ HealthAI项目展示了如何将**多Agent系统**、**多维度情绪分析**�
 
 ---
 
-## Awareness Local 产品运行时记忆接入
+## 聊天本地记忆与健康上下文接入
 
 > 变更日期：2026-05-14  
-> 影响范围：`ProductMemoryService`、`AwarenessLocalProvider`、`/api/v1/chat/message`、`/api/v1/chat/stream`、`WS /api/v1/chat/ws/{user_id}`、`memory_state`  
-> 状态：已完成基础接入；本地开发/演示可用；线上多用户隔离、云端同步和合规策略需要验证。
+> 影响范围：`ProductMemoryService`、`ChatMemoryService`、`HealthContextService`、`/api/v1/chat/message`、`/api/v1/chat/stream`、`WS /api/v1/chat/ws/{user_id}`、`memory_state`  
+> 状态：已完成基础接入；本地开发/演示可用；线上多用户隔离、恢复演练和合规策略需要验证。
 
 ### 设计目标
 
-MoonCARE 在现有 `chat_memories` 基础上，引入 Awareness Local 作为产品运行时的外部记忆 provider。后端默认访问本机 Awareness daemon 的 MCP endpoint：`http://localhost:37800/mcp`。该能力用于补强跨会话记忆、用户偏好、经前体验摘要和事实图谱召回，不改变 MoonCARE 的危机优先、非诊断和仅供参考边界。
+MoonCARE 当前的产品记忆主链路固定为本地 `chat_memories` + 健康上下文组合。后端通过 `ProductMemoryService` 组装本地数据库中的对话记忆、周期状态、日记状态和安全过滤结果，不再把外部记忆服务作为默认运行时依赖。
 
-本阶段不启用 Awareness Cloud sync，不把 API key 暴露给前端，也不把完整敏感聊天原文写入 Awareness。Awareness 不可用、超时或返回格式异常时，聊天接口自动降级到本地 `chat_memories`。
+当前部署方向下，即使 Redis 未接入业务或健康上下文暂时缺失，聊天接口也继续按照既有安全链路工作，不因为外部记忆服务缺失而阻断主功能。
 
 ### 后端组件
 
 | 组件 | 类型 | 说明 |
 |------|------|------|
-| `ProductMemoryService` | 服务编排 | 对聊天流程暴露 `build_prompt_context()` 与 `capture_user_message()`；先使用本地 DB，再尝试 Awareness |
-| `AwarenessLocalProvider` | MCP 客户端 | 通过 `tools/call` 调用 `awareness_init`、`awareness_recall`、`awareness_record` |
-| `ChatMemoryService` | 本地 fallback | 保留原有规则摘要、最近上下文、检索上下文和安全过滤 |
+| `ProductMemoryService` | 服务编排 | 对聊天流程暴露 `build_prompt_context()` 与 `capture_user_message()`；仅组合本地数据库记忆与健康上下文 |
+| `ChatMemoryService` | 本地记忆 | 保留原有规则摘要、最近上下文、检索上下文和安全过滤 |
+| `HealthContextService` | 健康上下文 | 提供周期、日记等可复用状态给聊天主链路 |
 
 ### 配置项
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `AWARENESS_MEMORY_ENABLED` | `bool` | `true` | 是否启用 Awareness Local provider |
-| `AWARENESS_BASE_URL` | `str` | `http://localhost:37800` | Awareness Local daemon 地址 |
-| `AWARENESS_MCP_PATH` | `str` | `/mcp` | MCP endpoint 路径 |
-| `AWARENESS_TIMEOUT_SECONDS` | `float` | `0.25` | 本地记忆调用超时；超时后降级 |
-| `AWARENESS_RECALL_LIMIT` | `int` | `5` | 每轮最多召回的 Awareness 记忆条数 |
-| `AWARENESS_SOURCE` | `str` | `mooncare-backend` | 写入 Awareness 的来源标识 |
+| `CHAT_CONTEXT_RECENT_TURNS` | `int` | `20` | 进入模型前保留的近期对话轮数 |
+| `CHAT_CONTEXT_MAX_TURNS` | `int` | `30` | 压缩前允许参与上下文拼装的最大轮数 |
+| `CONVERSATION_COMPACTION_USE_TIKTOKEN` | `bool` | `false` | 是否启用 tiktoken 辅助的上下文压缩 |
 
 ### API / WebSocket 字段扩展
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `memory_state.provider` | `str` | `local_db` | 本轮实际使用的记忆 provider，可能为 `local_db` 或 `awareness_local` |
-| `memory_state.awareness_available` | `bool` | `false` | 本轮 Awareness 调用是否可用 |
-| `memory_state.awareness_recalled` | `bool` | `false` | 本轮是否从 Awareness 召回内容 |
-| `memory_state.awareness_recorded` | `bool` | `false` | 本轮是否向 Awareness 写入安全摘要 |
-| `memory_state.awareness_items` | `int` | `0` | Awareness 召回条数 |
-| `memory_state.fallback_reason` | `str?` | `null` | Awareness 不可用时的降级原因；前端不应直接展示给用户 |
+| `memory_state.provider` | `str` | `local_db` | 本轮实际使用的记忆 provider，当前固定为 `local_db` |
+| `memory_state.health_context_available` | `bool` | `false` | 周期 / 日记健康上下文是否可用 |
+| `memory_state.health_context_has_cycle` | `bool` | `false` | 是否拼装了周期上下文 |
+| `memory_state.health_context_has_diary` | `bool` | `false` | 是否拼装了日记上下文 |
 
 ### 安全注意点
 
-- `ProductMemoryService` 只在本地 DB 先产生安全摘要后，才向 Awareness record；不会把完整用户原文作为长期记忆写入 Awareness。
-- 危机、自杀、自残、轻生或 `is_sensitive=true` 的消息不会写入 Awareness 普通记忆。
-- Awareness 召回只作为 prompt 的“长期记忆参考”，不得覆盖 `PerceptionAgent` 的 `risk_level`、Router 的危机路由或 InterventionAgent。
-- 本地 daemon 适合单机开发/演示。真实部署前必须重新设计用户隔离、数据保留、撤回删除、Cloud sync 授权和 JWT 用户上下文。
-- 如果未来把 Awareness 记忆纳入 PMS 风险计算或 `EmotionEngine` 权重，必须同步更新算法文档、测试样本和用户提示文案。
+- `ProductMemoryService` 仅组合本地数据库记忆、周期上下文和日记上下文，不引入额外外部记忆依赖。
+- 危机、自杀、自残、轻生或 `is_sensitive=true` 的消息不应被当作普通长期记忆扩写。
+- 记忆上下文只作为 prompt 的辅助参考，不得覆盖 `PerceptionAgent` 的 `risk_level`、Router 的危机路由或 InterventionAgent。
+- 如未来把记忆信号纳入 PMS 风险计算或 `EmotionEngine` 权重，必须同步更新算法文档、测试样本和用户提示文案。
 
 ---
 

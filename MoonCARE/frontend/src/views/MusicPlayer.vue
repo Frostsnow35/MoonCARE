@@ -1,17 +1,22 @@
 <template>
-  <div class="music-page">
+  <div class="app-page">
     <main class="music-shell">
-      <header class="page-header">
-        <div>
-          <p class="eyebrow">音乐</p>
-          <h1>播放器</h1>
+      <header class="page-card-soft p-5">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="section-label">音乐</p>
+            <h1 class="page-title mt-3">舒缓播放</h1>
+            <p class="page-subtitle">
+              这里保留为二级工具，适合在聊天或日记之后切过来听一会儿，让情绪有个落点。
+            </p>
+          </div>
+          <button type="button" class="icon-button shadow-none" :disabled="isLoading" aria-label="刷新" @click="loadMusic">
+            ↻
+          </button>
         </div>
-        <button type="button" class="icon-button" :disabled="isLoading" aria-label="刷新" @click="loadMusic">
-          ↻
-        </button>
       </header>
 
-      <section class="upload-panel">
+      <section class="page-card p-4">
         <input
           ref="fileInput"
           type="file"
@@ -19,23 +24,23 @@
           accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac"
           @change="handleFileChange"
         />
-        <button type="button" class="upload-button" :disabled="uploading" @click="openFilePicker">
-          ＋ 上传本地音乐
+        <button type="button" class="primary-button w-full" :disabled="uploading" @click="openFilePicker">
+          上传本地音乐
         </button>
         <p v-if="uploadMessage" class="upload-message">{{ uploadMessage }}</p>
       </section>
 
-      <section v-if="isLoading" class="state-panel">
-        <p>正在加载音乐...</p>
+      <section v-if="isLoading" class="page-card p-8 text-center text-sm text-slate-500">
+        正在加载音乐...
       </section>
 
-      <section v-else-if="error" class="state-panel">
-        <p>{{ error }}</p>
-        <button type="button" class="plain-button" @click="loadMusic">重试</button>
+      <section v-else-if="error" class="page-card p-8 text-center">
+        <p class="text-sm leading-6 text-slate-500">{{ error }}</p>
+        <button type="button" class="secondary-button mt-4 w-full" @click="loadMusic">重试</button>
       </section>
 
       <template v-else>
-        <section class="player-panel">
+        <section class="page-card p-4">
           <MusicPlayer
             :songs="songs"
             :selected-index="currentIndex"
@@ -44,19 +49,21 @@
             @play-state-change="handlePlayStateChange"
             @playback-error="handlePlaybackError"
           />
-          <div v-if="currentSong" class="feedback-row">
-            <button type="button" :disabled="feedbackPending" @click="likeCurrentSong">
-              ♡ 喜欢
+
+          <div v-if="currentSong" class="mt-4 grid grid-cols-2 gap-3">
+            <button type="button" class="secondary-button border-blue-200 text-blue-700" :disabled="feedbackPending" @click="likeCurrentSong">
+              喜欢
             </button>
-            <button type="button" :disabled="feedbackPending" @click="dislikeCurrentSong">
-              ↻ 不合适
+            <button type="button" class="ghost-button border border-gray-200 text-slate-600" :disabled="feedbackPending" @click="dislikeCurrentSong">
+              不合适
             </button>
           </div>
+
           <p v-if="feedbackMessage" class="feedback-message">{{ feedbackMessage }}</p>
           <p v-if="playbackError" class="error-text">{{ playbackError }}</p>
         </section>
 
-        <section v-if="likedSongs.length" class="list-panel liked-panel">
+        <section v-if="likedSongs.length" class="page-card border-pink-100 p-4">
           <div class="section-title">
             <h2>我喜欢的音乐</h2>
             <span>{{ likedSongs.length }} 首</span>
@@ -70,7 +77,7 @@
               class="song-item"
               @click="playLikedSong(song)"
             >
-              <span class="song-index">♡</span>
+              <span class="song-index">♥</span>
               <span class="song-copy">
                 <strong>{{ song.title }}</strong>
                 <small>{{ song.artist || '本地音乐' }}</small>
@@ -80,7 +87,7 @@
           </div>
         </section>
 
-        <section class="list-panel">
+        <section class="page-card p-4">
           <div class="section-title">
             <h2>本地音乐</h2>
             <span>{{ songs.length }} 首</span>
@@ -110,8 +117,6 @@
         </section>
       </template>
     </main>
-
-    <BottomNav />
   </div>
 </template>
 
@@ -119,7 +124,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { musicAPI } from '../api'
 import MusicPlayer from '../components/MusicPlayer.vue'
-import BottomNav from '../components/BottomNav.vue'
 
 const songs = ref([])
 const currentIndex = ref(0)
@@ -149,7 +153,9 @@ async function loadMusic() {
     }
   } catch (err) {
     console.error('Failed to load music:', err)
-    error.value = err?.response?.status === 401 ? '请先登录后使用音乐播放器。' : '音乐加载失败，请稍后重试。'
+    error.value = err?.response?.status === 401
+      ? '请先登录后再使用音乐播放。'
+      : '音乐加载失败，请稍后重试。'
   } finally {
     isLoading.value = false
   }
@@ -287,204 +293,94 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.music-page {
-  min-height: 100vh;
-  background: #f7fbff;
-  color: #111827;
-}
-
 .music-shell {
-  width: min(100%, 448px);
+  width: min(100%, 32rem);
   margin: 0 auto;
-  padding: 18px 16px 88px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.eyebrow {
-  margin: 0 0 4px;
-  color: #ec4899;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.page-header h1 {
-  margin: 0;
-  font-size: 28px;
-  line-height: 1.2;
-  font-weight: 800;
-}
-
-.icon-button {
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: 50%;
-  background: #ffffff;
-  color: #2563eb;
-  font-size: 22px;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
-}
-
-.upload-panel,
-.player-panel,
-.list-panel,
-.state-panel {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-}
-
-.upload-panel {
-  padding: 12px;
-  margin-bottom: 12px;
+  padding: 1rem 1rem calc(6.5rem + env(safe-area-inset-bottom));
+  display: grid;
+  gap: 1rem;
 }
 
 .hidden-input {
   display: none;
 }
 
-.upload-button,
-.plain-button {
-  width: 100%;
-  min-height: 42px;
-  border: 0;
-  border-radius: 8px;
-  background: #ec4899;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.upload-button:disabled {
-  opacity: 0.6;
+.upload-message,
+.error-text,
+.feedback-message {
+  margin: 0.75rem 0 0;
+  text-align: center;
+  font-size: 0.8125rem;
 }
 
 .upload-message,
-.error-text {
-  margin: 10px 0 0;
-  color: #64748b;
-  font-size: 13px;
-  text-align: center;
-}
-
-.state-panel {
-  padding: 36px 18px;
-  text-align: center;
-  color: #64748b;
-}
-
-.state-panel p {
-  margin: 0 0 14px;
-}
-
-.player-panel {
-  padding: 16px;
-  margin-bottom: 12px;
-}
-
-.feedback-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.feedback-row button {
-  min-height: 40px;
-  border: 1px solid #dbeafe;
-  border-radius: 999px;
-  background: #f8fbff;
-  color: #2563eb;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.feedback-row button:disabled {
-  opacity: 0.55;
-}
-
 .feedback-message {
-  margin: 10px 0 0;
-  color: #ec4899;
-  font-size: 13px;
-  text-align: center;
+  color: #db2777;
+}
+
+.error-text {
+  color: #64748b;
 }
 
 .section-title {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
 }
 
 .section-title h2 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 800;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1f2937;
 }
 
 .section-title span {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.list-panel {
-  padding: 14px;
-  margin-bottom: 12px;
-}
-
-.liked-panel {
-  border-color: #fbcfe8;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 .song-list {
   display: grid;
-  gap: 8px;
+  gap: 0.75rem;
 }
 
 .song-item {
   width: 100%;
-  min-height: 62px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 2.25rem minmax(0, 1fr) auto;
   align-items: center;
-  padding: 10px;
+  gap: 0.75rem;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: 1rem;
   background: #ffffff;
+  padding: 0.875rem;
   text-align: left;
 }
 
 .song-item.active {
-  border-color: #ec4899;
+  border-color: #f9a8d4;
   background: #fdf2f8;
 }
 
 .song-index {
-  width: 34px;
-  height: 34px;
+  width: 2.25rem;
+  height: 2.25rem;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 999px;
   background: #eff6ff;
   color: #2563eb;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 0.8125rem;
+  font-weight: 700;
 }
 
 .song-copy {
   min-width: 0;
   display: grid;
-  gap: 3px;
+  gap: 0.15rem;
 }
 
 .song-copy strong,
@@ -495,24 +391,32 @@ onMounted(() => {
 }
 
 .song-copy strong {
-  color: #111827;
-  font-size: 14px;
+  font-size: 0.875rem;
+  color: #1f2937;
 }
 
 .song-copy small {
+  font-size: 0.75rem;
   color: #64748b;
-  font-size: 12px;
 }
 
 .song-state {
-  color: #ec4899;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #db2777;
 }
 
 .empty-list {
-  padding: 22px;
-  color: #64748b;
+  padding: 1.5rem;
   text-align: center;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+@media (min-width: 1024px) {
+  .music-shell {
+    width: min(100%, 40rem);
+    padding: 2rem 2rem 2.5rem;
+  }
 }
 </style>

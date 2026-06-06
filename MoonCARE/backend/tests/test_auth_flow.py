@@ -145,6 +145,67 @@ class AuthFlowTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_send_email_code_in_debug_log_mode_returns_debug_code(self):
+        original_debug = self.auth_module.settings.DEBUG
+        original_mode = self.auth_module.settings.AUTH_EMAIL_DELIVERY_MODE
+        self.addCleanup(setattr, self.auth_module.settings, "DEBUG", original_debug)
+        self.addCleanup(
+            setattr,
+            self.auth_module.settings,
+            "AUTH_EMAIL_DELIVERY_MODE",
+            original_mode,
+        )
+        self.auth_module.settings.DEBUG = True
+        self.auth_module.settings.AUTH_EMAIL_DELIVERY_MODE = "log"
+
+        response = self.client.post(
+            "/api/v1/auth/email-code/send",
+            json={"email": "debug-register@example.com", "purpose": "register"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"].get("debug_email_code"), "123456")
+
+    def test_forgot_password_in_debug_log_mode_returns_debug_code(self):
+        from app.api.v1.auth import hash_password
+        from app.models.user import User
+
+        db = self.SessionLocal()
+        try:
+            db.add(
+                User(
+                    email="debug-reset@example.com",
+                    hashed_password=hash_password("Oldpass123"),
+                    nickname="DebugReset",
+                    is_email_verified=True,
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        original_debug = self.auth_module.settings.DEBUG
+        original_mode = self.auth_module.settings.AUTH_EMAIL_DELIVERY_MODE
+        self.addCleanup(setattr, self.auth_module.settings, "DEBUG", original_debug)
+        self.addCleanup(
+            setattr,
+            self.auth_module.settings,
+            "AUTH_EMAIL_DELIVERY_MODE",
+            original_mode,
+        )
+        self.auth_module.settings.DEBUG = True
+        self.auth_module.settings.AUTH_EMAIL_DELIVERY_MODE = "log"
+
+        response = self.client.post(
+            "/api/v1/auth/password/forgot",
+            json={"email": "debug-reset@example.com"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"].get("debug_email_code"), "123456")
+
     def test_register_requires_unique_nickname(self):
         from app.models.user import User
 

@@ -373,12 +373,16 @@ def _get_or_create_debug_test_user(db: Session) -> User:
     return test_user
 
 
-def _send_code_response() -> ApiResponse:
+def _send_code_response(debug_email_code: str | None = None) -> ApiResponse:
+    data: dict[str, Any] = {
+        "expires_in_seconds": settings.AUTH_EMAIL_CODE_TTL_MINUTES * 60,
+        "cooldown_seconds": settings.AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS,
+    }
+    if settings.DEBUG and settings.AUTH_EMAIL_DELIVERY_MODE.lower().strip() == "log" and debug_email_code:
+        data["debug_email_code"] = debug_email_code
+
     return ApiResponse(
-        data={
-            "expires_in_seconds": settings.AUTH_EMAIL_CODE_TTL_MINUTES * 60,
-            "cooldown_seconds": settings.AUTH_EMAIL_CODE_RESEND_COOLDOWN_SECONDS,
-        },
+        data=data,
         message="验证码已发送，请查收邮箱",
     )
 
@@ -411,7 +415,7 @@ async def send_email_code(
             detail="验证码邮件暂时无法发送，请稍后再试",
         ) from exc
 
-    return _send_code_response()
+    return _send_code_response(debug_email_code=plain_code)
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -519,7 +523,7 @@ async def forgot_password(
             detail="验证码邮件暂时无法发送，请稍后再试",
         ) from exc
 
-    return _send_code_response()
+    return _send_code_response(debug_email_code=plain_code)
 
 
 @router.post("/password/reset", response_model=ApiResponse)

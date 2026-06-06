@@ -16,7 +16,15 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import engine, Base
-from app.api.v1 import biometric, emotion, menstrual, diary, chat, music, interview, auth, mobile
+import app.api.v1.auth as auth
+import app.api.v1.biometric as biometric
+import app.api.v1.chat as chat
+import app.api.v1.diary as diary
+import app.api.v1.emotion as emotion
+import app.api.v1.interview as interview
+import app.api.v1.menstrual as menstrual
+import app.api.v1.mobile as mobile
+import app.api.v1.music as music
 from app.services.semantic_cache_service import get_semantic_cache
 from app.services.conversation_compaction_service import get_conversation_compaction_service
 
@@ -68,10 +76,7 @@ async def lifespan(app: FastAPI):
                 stats = semantic_cache.get_cache_stats()
             else:
                 stats = {"error": "cache unavailable"}
-            if stats.get("available"):
-                print(f"[Startup] Semantic cache initialized: {stats}")
-            else:
-                print("[Startup] Semantic cache not available (Redis not connected)")
+            print(f"[Startup] Semantic cache initialized: {stats}")
         except Exception as e:
             print(f"[Startup] Failed to initialize semantic cache: {e}")
     

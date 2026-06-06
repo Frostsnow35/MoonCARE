@@ -1,5 +1,5 @@
 <template>
-  <div class="diary-page">
+  <div class="app-page">
     <Transition name="toast">
       <div
         v-if="toastMessage"
@@ -11,14 +11,21 @@
       </div>
     </Transition>
 
-    <div class="max-w-lg mx-auto pb-16 px-4">
-        <div class="flex items-center justify-between pt-4 pb-3">
-          <h1 class="text-lg font-bold text-gray-800">情绪日记</h1>
-          <span class="text-xs text-gray-500">{{ diaryStore.total }} 篇</span>
-        </div>
+    <div class="page-content page-stack">
+        <div class="rounded-[1.5rem] border border-rose-100 bg-white/80 px-4 py-4 shadow-[0_18px_40px_rgba(190,24,93,0.06)]">
+          <div class="flex items-end justify-between gap-4">
+            <div>
+              <p class="section-label">日记</p>
+              <h1 class="mt-2 text-lg font-semibold text-slate-800">情绪日记</h1>
+              <p class="mt-1 text-sm leading-6 text-slate-500">
+                先记下今天的感受和身体变化，后面的聊天和状态摘要才有更完整的上下文。
+              </p>
+            </div>
+            <span class="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">{{ diaryStore.total }} 篇</span>
+          </div>
 
-        <Transition name="slide">
-          <div v-if="diaryStore.hasDraft && !isDraftLoaded" class="bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl p-3 mb-3 border border-pink-100">
+          <Transition name="slide">
+            <div v-if="diaryStore.hasDraft && !isDraftLoaded" class="mt-4 rounded-xl border border-pink-100 bg-gradient-to-r from-pink-50 to-rose-50 p-3">
             <div class="flex items-center justify-between">
               <div>
                 <div class="text-xs font-medium text-pink-600">有未完成的草稿</div>
@@ -41,11 +48,12 @@
                 </button>
               </div>
             </div>
-          </div>
-        </Transition>
+            </div>
+          </Transition>
+        </div>
 
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <h3 class="font-medium text-gray-800 mb-3">记录今天的感受</h3>
+      <div class="page-card p-4">
+        <h3 class="mb-3 font-medium text-gray-800">记录今天的感受</h3>
 
         <div class="mb-4">
           <div class="text-xs text-gray-500 mb-2">今天心情如何？</div>
@@ -75,16 +83,26 @@
           ></textarea>
         </div>
 
-        <div class="flex items-center gap-3 mb-4">
+        <div class="mb-4 flex items-center gap-3">
           <button
             type="button"
             @click="toggleVoiceRecording"
+            :disabled="!voiceInputSupported"
             class="flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors text-sm"
             :class="isRecording ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
           >
             <span class="font-medium">{{ isRecording ? '停止录音' : '语音输入' }}</span>
           </button>
           <span v-if="isRecording" class="text-xs text-red-500 animate-pulse">录音中...</span>
+        </div>
+
+        <div class="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
+          <template v-if="voiceInputSupported">
+            语音输入依赖浏览器的语音识别能力。识别失败时会直接提示，不会假装已经转写成功。
+          </template>
+          <template v-else>
+            当前浏览器不支持语音输入，建议先用文字记录，后续再回到支持语音的环境补充。
+          </template>
         </div>
 
         <div class="mb-4">
@@ -125,7 +143,7 @@
         </div>
       </div>
 
-      <div class="mt-4">
+      <div class="page-card p-4">
         <div class="flex items-center justify-between mb-3">
           <h2 class="font-medium text-gray-800 text-sm">最近日记</h2>
           <button
@@ -301,8 +319,6 @@
       </div>
     </div>
 
-    <BottomNav />
-
     <Transition name="modal">
       <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="showDeleteConfirm = false">
         <div class="bg-white rounded-2xl p-6 w-full max-w-sm transform">
@@ -335,7 +351,6 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDiaryStore } from '../stores/diary'
 import { diaryAPI } from '../api'
-import BottomNav from '../components/BottomNav.vue'
 
 const router = useRouter()
 const diaryStore = useDiaryStore()
@@ -375,6 +390,7 @@ const quickMoods = [
 
 const emotionTags = ['平静', '开心', '焦虑', '低落', '烦躁', '疲惫', '压力大', '失眠']
 const isRecording = computed(() => diaryStore.isRecording)
+const voiceInputSupported = typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
 const speechRecognition = ref(null)
 
 function showToast(message, type = 'success') {
@@ -706,11 +722,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.diary-page {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #fef7f8 0%, #f9fafb 30%, #f5f7fa 100%);
-}
-
 .toast-enter-active,
 .toast-leave-active {
   transition: all 0.3s ease;

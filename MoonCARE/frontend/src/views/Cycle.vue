@@ -1,5 +1,5 @@
 <template>
-  <div class="cycle-page">
+  <div class="app-page">
     <Transition name="toast">
       <div
         v-if="toastMessage"
@@ -11,19 +11,27 @@
       </div>
     </Transition>
 
-    <div class="max-w-lg mx-auto pb-16 px-4">
-      <div class="flex items-center justify-between pt-4 pb-3">
-        <h1 class="text-lg font-bold text-gray-800">月经周期</h1>
-        <button
-          type="button"
-          @click="openCreateRecordModal"
-          class="px-3 py-1.5 bg-pink-500 text-white text-xs font-medium rounded-full hover:bg-pink-600 transition-colors"
-        >
-          新增记录
-        </button>
+    <div class="page-content page-stack">
+      <div class="rounded-[1.5rem] border border-rose-100 bg-white/80 px-4 py-4 shadow-[0_18px_40px_rgba(190,24,93,0.06)]">
+        <div class="flex items-end justify-between gap-4">
+          <div>
+            <p class="section-label">周期</p>
+            <h1 class="mt-2 text-lg font-semibold text-slate-800">月经周期</h1>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
+              先把记录、日历和预测放在同一页里，避免移动端同时塞进过多并列信息。
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="openCreateRecordModal"
+            class="primary-button whitespace-nowrap px-4"
+          >
+            新增记录
+          </button>
+        </div>
       </div>
 
-      <div class="bg-gradient-to-br from-pink-100 to-purple-100 rounded-xl p-4 border border-pink-200">
+      <div class="page-card-soft p-4">
         <div class="text-center mb-3">
           <div class="text-base font-semibold text-gray-800">{{ currentPhaseName }}</div>
           <div class="text-xs text-gray-600">{{ currentPhaseDescription }}</div>
@@ -54,7 +62,7 @@
         </div>
       </div>
 
-      <div class="mt-3 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div class="page-card overflow-hidden">
         <div class="flex border-b border-gray-100">
           <button
             v-for="tab in tabs"
@@ -327,14 +335,12 @@
       </div>
     </div>
 
-    <BottomNav />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { menstrualAPI } from '../api'
-import BottomNav from '../components/BottomNav.vue'
 
 const records = ref([])
 const prediction = ref(null)
@@ -645,11 +651,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.cycle-page {
-  min-height: 100vh;
-  background: #f9fafb;
-}
-
 .toast-enter-active,
 .toast-leave-active {
   transition: all 0.3s ease;

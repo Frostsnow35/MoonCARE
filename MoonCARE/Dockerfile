@@ -12,7 +12,11 @@ RUN npm run build
 FROM python:3.11-slim AS backend-base
 WORKDIR /app
 # 安装系统依赖（编译 psycopg2 所需）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian|http://mirrors.tencent.com/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|http://mirrors.tencent.com/debian-security|g' \
+        /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.txt .
@@ -24,13 +28,20 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/backend
-RUN apt-get update && apt-get install -y --no-install-recommends \
+    PYTHONPATH=/app/backend \
+    HOME=/home/appuser
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian|http://mirrors.tencent.com/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|http://mirrors.tencent.com/debian-security|g' \
+        /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl postgresql-client && \
     rm -rf /var/lib/apt/lists/*
 # 创建非 root 用户
 RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 --gid 1001 appuser
+    adduser --system --uid 1001 --gid 1001 --home /home/appuser appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appgroup /home/appuser
 
 # 从 backend-base 复制已安装的依赖和可执行文件
 COPY --from=backend-base --chown=appuser:appgroup /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
@@ -52,4 +63,4 @@ EXPOSE 8000
 
 # 使用 gunicorn + uvicorn worker 运行，entrypoint 会先执行迁移
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["gunicorn", "--chdir", "/app/backend", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8000", "--timeout", "120", "app.main:app"]
+CMD ["gunicorn", "--chdir", "/app/backend", "--worker-tmp-dir", "/tmp", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8000", "--timeout", "120", "app.main:app"]

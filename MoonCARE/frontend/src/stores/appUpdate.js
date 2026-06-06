@@ -10,13 +10,18 @@ import {
   openInstallPermissionSettings
 } from '../plugins/mooncareUpdater'
 
+const explicitUpdateCheckUrl = (import.meta.env.VITE_APP_UPDATE_CHECK_URL || '').trim()
+const secureUpdateChecksEnabled =
+  explicitUpdateCheckUrl.startsWith('https://') &&
+  (import.meta.env.VITE_APP_UPDATE_AUTO_CHECK || 'true') === 'true'
+
 function mapReleaseError(error) {
   const detail = error?.response?.data?.detail
-  return detail || error?.message || '更新检查失败，请稍后重试。'
+  return detail || error?.message || '检查更新失败，请稍后再试。'
 }
 
 function mapInstallError(error) {
-  const message = error?.message || '更新包下载失败，请稍后重试。'
+  const message = error?.message || '下载安装更新包失败，请稍后再试。'
   const code = error?.code || 'download_install_failed'
   return { code, message }
 }
@@ -75,13 +80,13 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
       case 'checking':
         return '正在检查更新'
       case 'up_to_date':
-        return '已是最新版本'
+        return '当前已经是最新版本'
       case 'update_available':
-        return '发现新版本，可稍后更新'
+        return '发现新版本，可以稍后更新'
       case 'force_update':
-        return '当前版本已停止支持，需要更新后继续使用'
+        return '当前版本已停止支持，更新后才能继续使用'
       case 'installer_opened':
-        return '安装界面已打开'
+        return '安装界面已经打开'
       case 'error':
         return errorMessage.value || '检查失败'
       case 'unsupported':
@@ -96,7 +101,7 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
 
     initialized.value = true
     await loadAppInfo()
-    if (appInfo.value.platform === 'android') {
+    if (appInfo.value.platform === 'android' && secureUpdateChecksEnabled) {
       await checkForUpdates({ silent: true })
     } else {
       status.value = 'unsupported'
@@ -118,6 +123,15 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
     if (appInfo.value.platform !== 'android') {
       status.value = 'unsupported'
       lastCheckedAt.value = new Date().toISOString()
+      return null
+    }
+
+    if (!secureUpdateChecksEnabled) {
+      errorMessage.value = '当前调试环境未配置 HTTPS 更新地址'
+      errorCode.value = 'update_endpoint_unavailable'
+      status.value = 'unsupported'
+      lastCheckedAt.value = new Date().toISOString()
+      if (!silent) promptVisible.value = false
       return null
     }
 
@@ -145,9 +159,7 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
       errorCode.value = error?.code || ''
       status.value = 'error'
       lastCheckedAt.value = new Date().toISOString()
-      if (!silent) {
-        promptVisible.value = false
-      }
+      if (!silent) promptVisible.value = false
       return null
     } finally {
       isChecking.value = false
@@ -199,7 +211,6 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
 
   function openDownloadPage() {
     if (!downloadUrl.value || typeof window === 'undefined') return null
-
     window.open(downloadUrl.value, '_blank', 'noopener,noreferrer')
     return downloadUrl.value
   }

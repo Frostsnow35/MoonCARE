@@ -19,6 +19,20 @@ services:
       - mooncare-net
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: mooncare-redis
+    ports:
+      - "${REDIS_BIND_ADDR:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mooncare-net
+    restart: unless-stopped
+
   app:
     build: .
     image: mooncare:latest
@@ -53,10 +67,16 @@ services:
       CHAT_AGENT_REPLY_TIMEOUT_SECONDS: ${CHAT_AGENT_REPLY_TIMEOUT_SECONDS:-45}
       LLM_TRUST_ENV_PROXY: ${LLM_TRUST_ENV_PROXY:-false}
       MEMORY_SYSTEM_ENABLED: ${MEMORY_SYSTEM_ENABLED:-true}
-      REDIS_URL: ${REDIS_URL:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       SEMANTIC_CACHE_ENABLED: ${SEMANTIC_CACHE_ENABLED:-false}
-      AWARENESS_MEMORY_ENABLED: ${AWARENESS_MEMORY_ENABLED:-false}
-      AWARENESS_BASE_URL: ${AWARENESS_BASE_URL:-http://host.docker.internal:37800}
+      AUTH_EMAIL_DELIVERY_MODE: ${AUTH_EMAIL_DELIVERY_MODE:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@mooncare.local}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
     depends_on:
       postgres:
         condition: service_healthy

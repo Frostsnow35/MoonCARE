@@ -1,24 +1,18 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { emotionAPI, menstrualAPI, biometricAPI } from '../api'
+import { computed, ref } from 'vue'
+import { biometricAPI, emotionAPI, menstrualAPI } from '../api'
 
 export const useHealthStore = defineStore('health', () => {
-  // State
   const currentPhase = ref('unknown')
   const pmsRisk = ref(0.5)
-  const moodLevel = ref(5.0)
+  const moodLevel = ref(5)
   const phaseInfo = ref(null)
   const isLoading = ref(false)
   const lastUpdated = ref(null)
-
-  // Biometric data
   const latestBiometric = ref(null)
-
-  // Predictions
   const cyclePrediction = ref(null)
   const recommendations = ref([])
 
-  // Computed
   const riskLevel = computed(() => {
     if (pmsRisk.value >= 0.8) return 'critical'
     if (pmsRisk.value >= 0.7) return 'high'
@@ -32,23 +26,22 @@ export const useHealthStore = defineStore('health', () => {
       ovulation: '排卵期',
       luteal: '黄体期',
       menstrual: '经期',
-      unknown: '未知'
+      unknown: '待判断'
     }
-    return names[currentPhase.value] || '未知'
+    return names[currentPhase.value] || '待判断'
   })
 
   const phaseEmoji = computed(() => {
     const emojis = {
       follicular: '🌱',
-      ovulation: '🌸',
-      luteal: '🌷',
-      menstrual: '🌺',
-      unknown: '❓'
+      ovulation: '🌼',
+      luteal: '🌙',
+      menstrual: '🩸',
+      unknown: '·'
     }
-    return emojis[currentPhase.value] || '❓'
+    return emojis[currentPhase.value] || '·'
   })
 
-  // Actions
   async function fetchEmotionState(days = 7) {
     isLoading.value = true
     try {
@@ -103,7 +96,6 @@ export const useHealthStore = defineStore('health', () => {
   }
 
   return {
-    // State
     currentPhase,
     pmsRisk,
     moodLevel,
@@ -113,11 +105,9 @@ export const useHealthStore = defineStore('health', () => {
     latestBiometric,
     cyclePrediction,
     recommendations,
-    // Computed
     riskLevel,
     phaseName,
     phaseEmoji,
-    // Actions
     fetchEmotionState,
     fetchPhaseInfo,
     fetchCyclePrediction,

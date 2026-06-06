@@ -32,7 +32,7 @@ V1 不在 APK 内保存 LLM Key、数据库密码、`SECRET_KEY` 或 Railway tok
 
 | 阶段 | 内容 | 完成标准 |
 | --- | --- | --- |
-| M0 配置基线 | 清理 Awareness 外部服务配置；保留 Railway 后端测试部署配置 | `package.json` 无 `awareness:start`；`Procfile` 无 Awareness worker；`railway.json` 可运行后端 |
+| M0 配置基线 | 补齐 Redis/后端环境变量基线；保留 Railway 后端测试部署配置 | `package.json` 无额外外部记忆服务脚本；`Procfile` 无额外记忆 worker；`railway.json` 可运行后端 |
 | M1 Railway 后端 | 用 `Dockerfile` 部署 FastAPI，设置环境变量和数据库 | `/healthz` 可访问；登录、聊天、日记、周期 API 可用 |
 | M2 Capacitor 骨架 | 在不破坏 Web build 的前提下新增 Android shell | `frontend/npm run build` 仍通过；Android debug APK 可安装 |
 | M3 API 环境切换 | 支持 LAN、Railway 两套 API Base URL | 本地调试和 Railway 联调可切换，不改源码常量 |

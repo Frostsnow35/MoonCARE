@@ -11,12 +11,11 @@ const routes = [
     path: '/home',
     name: 'Home',
     component: () => import('../views/Home.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'home' }
   },
   {
     path: '/home-old',
-    name: 'HomeOld',
-    component: () => import('../views/HomeOld.vue')
+    redirect: '/home'
   },
   {
     path: '/login',
@@ -40,49 +39,49 @@ const routes = [
     path: '/diary',
     name: 'Diary',
     component: () => import('../views/Diary.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'diary' }
   },
   {
     path: '/diary/:id',
     name: 'DiaryDetail',
     component: () => import('../views/DiaryDetail.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'diary' }
   },
   {
     path: '/cycle',
     name: 'Cycle',
     component: () => import('../views/Cycle.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'cycle' }
   },
   {
     path: '/chat',
     name: 'Chat',
     component: () => import('../views/Chat.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'chat' }
   },
   {
     path: '/breathing',
     name: 'Breathing',
     component: () => import('../views/Breathing.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'profile' }
   },
   {
     path: '/music',
     name: 'Music',
     component: () => import('../views/MusicPlayer.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'profile' }
   },
   {
     path: '/wave',
     name: 'WaveMonitor',
     component: () => import('../views/WaveMonitor.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'profile' }
   },
   {
     path: '/profile',
     name: 'Profile',
     component: () => import('../views/Profile.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, navGroup: 'profile' }
   }
 ]
 

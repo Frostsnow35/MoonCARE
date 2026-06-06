@@ -1,223 +1,193 @@
 <template>
-  <div class="profile-page">
-    <div class="max-w-lg mx-auto pb-16">
-      <!-- Header -->
-      <div class="bg-gradient-to-br from-pink-50 to-purple-50 px-4 pt-4 pb-3">
-        <h1 class="text-lg font-bold text-gray-800">个人中心</h1>
-      </div>
+  <div class="app-page">
+    <div class="page-content page-stack">
+      <section class="page-card-soft p-5">
+        <div class="flex items-start gap-4">
+          <div class="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-rose-100 to-pink-200 text-rose-600">
+            <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="section-label">账户</p>
+            <h1 class="mt-2 text-lg font-semibold text-slate-800">{{ authStore.user?.nickname || 'MoonCARE 用户' }}</h1>
+            <p class="mt-1 break-all text-sm text-slate-500">{{ authStore.user?.email || '尚未同步邮箱信息' }}</p>
+            <p class="mt-3 text-sm leading-6 text-slate-500">
+              这里保留账户、工具入口、更新状态和设置占位，不再让版本更新区域盖过个人信息本身。
+            </p>
+          </div>
+        </div>
 
-      <!-- User Info Card -->
-      <div class="px-4 -mt-2">
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div class="flex items-center gap-3">
-            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-pink-100 to-pink-200 flex items-center justify-center">
-              <svg class="w-6 h-6 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <div class="rounded-2xl bg-white/90 px-4 py-3">
+            <div class="text-xs text-slate-500">下一次月经</div>
+            <div class="mt-2 text-sm font-semibold text-slate-800">{{ nextPeriodLabel }}</div>
+          </div>
+          <div class="rounded-2xl bg-white/90 px-4 py-3">
+            <div class="text-xs text-slate-500">当前阶段</div>
+            <div class="mt-2 text-sm font-semibold text-slate-800">{{ currentPhaseLabel }}</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-card p-4">
+        <div>
+          <p class="section-label">照护工具</p>
+          <h2 class="mt-2 text-base font-semibold text-slate-800">辅助能力统一收口</h2>
+          <p class="mt-1 text-sm leading-6 text-slate-500">
+            音乐、呼吸和波形监测不再占一级导航，但在个人中心和首页都能直接到达。
+          </p>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <router-link
+            v-for="tool in toolLinks"
+            :key="tool.path"
+            :to="tool.path"
+            class="rounded-[1.25rem] border border-rose-100 bg-rose-50/70 p-4 transition-transform active:scale-[0.98]"
+          >
+            <div class="flex items-center gap-3">
+              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-white text-xl shadow-sm">
+                {{ tool.icon }}
+              </div>
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-slate-800">{{ tool.label }}</div>
+                <div class="mt-1 text-xs leading-5 text-slate-500">{{ tool.helper }}</div>
+              </div>
             </div>
-            <div class="flex-1">
-              <div class="font-medium text-gray-800">{{ authStore.user?.nickname || '用户' }}</div>
-              <div class="text-xs text-gray-500">{{ authStore.user?.email || '' }}</div>
+          </router-link>
+        </div>
+      </section>
+
+      <section class="page-card p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="section-label">版本更新</p>
+            <h2 class="mt-2 text-base font-semibold text-slate-800">保留，但降级到账户区之后</h2>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
+              当前内测包仍支持查看版本状态。若环境允许，还可以继续走应用内更新。
+            </p>
+          </div>
+          <span
+            class="rounded-full px-3 py-1 text-[11px] font-semibold"
+            :class="appUpdateStore.hasUpdateAvailable ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'"
+          >
+            {{ appUpdateStore.appInfo.updateChannel || 'beta' }}
+          </span>
+        </div>
+
+        <div class="mt-4 rounded-[1.25rem] bg-rose-50/80 p-4">
+          <div class="grid gap-2 text-xs text-slate-500">
+            <div class="flex items-center justify-between gap-4">
+              <span>当前版本</span>
+              <span class="text-right">{{ appUpdateStore.currentVersionLabel }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <span>最近检查</span>
+              <span class="text-right">{{ formatLastChecked(appUpdateStore.lastCheckedAt) }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <span>更新状态</span>
+              <span class="max-w-[11rem] text-right">{{ appUpdateStore.statusLabel }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <span>最新版本</span>
+              <span class="text-right">{{ appUpdateStore.latestVersionLabel }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <span>发布时间</span>
+              <span class="text-right">{{ appUpdateStore.latestPublishedAtLabel }}</span>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Cycle Section -->
-      <div class="px-4 mt-4">
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <router-link
-            to="/cycle"
-            class="flex items-center justify-between p-4 active:bg-gray-50"
-          >
-            <div class="flex items-center gap-3">
-              <span class="text-xl">🌼</span>
-              <div>
-                <div class="font-medium text-gray-800 text-sm">周期记录</div>
-                <div class="text-xs text-gray-500">查看月经周期</div>
-              </div>
-            </div>
-            <span class="text-gray-400 text-sm">→</span>
-          </router-link>
-
-          <div class="border-t border-gray-100"></div>
-
-          <!-- Cycle Prediction Display -->
-          <div v-if="cyclePrediction" class="p-4">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-xl">🔮</span>
-              <span class="text-sm font-medium text-gray-700">周期预测</span>
-            </div>
-            <div class="space-y-1 text-xs text-gray-600 pl-7">
-              <div v-if="cyclePrediction.predicted_start">
-                下次月经: {{ formatDate(cyclePrediction.predicted_start) }}
-              </div>
-              <div>
-                {{ getPhaseName(cyclePrediction.current_phase) }}
-                <span v-if="cyclePrediction.current_phase === 'luteal'">
-                  {{ cyclePrediction.phase_days_remaining }}天后可能来潮
-                </span>
-                <span v-else>
-                  {{ cyclePrediction.phase_days_remaining }}天后进入下一阶段
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="border-t border-gray-100"></div>
-
-          <router-link
-            to="/wave"
-            class="flex items-center justify-between p-4 active:bg-gray-50"
-          >
-            <div class="flex items-center gap-3">
-              <span class="text-xl">📊</span>
-              <div>
-                <div class="font-medium text-gray-800 text-sm">波形监测</div>
-                <div class="text-xs text-gray-500">HRV & 温度实时数据</div>
-              </div>
-            </div>
-            <span class="text-gray-400 text-sm">→</span>
-          </router-link>
+        <div
+          v-if="appUpdateStore.errorMessage"
+          class="mt-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-700"
+        >
+          {{ appUpdateStore.errorMessage }}
         </div>
-      </div>
 
-      <!-- Settings Section -->
-      <div class="px-4 mt-4">
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div class="p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <div class="font-medium text-gray-800 text-sm">版本与更新</div>
-                <div class="text-xs text-gray-500 mt-1">内测包支持应用内检查与安装更新</div>
-              </div>
-              <span
-                class="px-2 py-0.5 rounded-full text-[11px]"
-                :class="appUpdateStore.hasUpdateAvailable ? 'bg-rose-50 text-rose-600' : 'bg-gray-100 text-gray-500'"
-              >
-                {{ appUpdateStore.appInfo.updateChannel || 'beta' }}
-              </span>
-            </div>
+        <div
+          v-if="!appUpdateStore.supportsSelfUpdate"
+          class="mt-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-500"
+        >
+          当前环境不是 Android 内测包，这里会继续显示版本状态，但不会直接触发安装。
+        </div>
 
-            <div class="mt-4 rounded-2xl bg-rose-50 border border-rose-100 p-4 space-y-2">
-              <div class="flex items-center justify-between text-xs text-gray-500">
-                <span>当前版本</span>
-                <span>{{ appUpdateStore.currentVersionLabel }}</span>
-              </div>
-              <div class="flex items-center justify-between text-xs text-gray-500">
-                <span>最近检查</span>
-                <span>{{ formatLastChecked(appUpdateStore.lastCheckedAt) }}</span>
-              </div>
-              <div class="flex items-center justify-between text-xs text-gray-500">
-                <span>更新状态</span>
-                <span class="text-right max-w-[180px]">{{ appUpdateStore.statusLabel }}</span>
-              </div>
-              <div class="flex items-center justify-between text-xs text-gray-500">
-                <span>最新版本</span>
-                <span>{{ appUpdateStore.latestVersionLabel }}</span>
-              </div>
-              <div class="flex items-center justify-between text-xs text-gray-500">
-                <span>发布时间</span>
-                <span>{{ appUpdateStore.latestPublishedAtLabel }}</span>
-              </div>
-              <div class="flex items-center justify-between text-xs text-gray-500">
-                <span>安装方式</span>
-                <span>{{ appUpdateStore.supportsSelfUpdate ? '应用内更新' : '当前环境仅支持查看版本' }}</span>
-              </div>
-            </div>
-
-            <div v-if="appUpdateStore.errorMessage" class="mt-3 rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-xs text-amber-700">
-              {{ appUpdateStore.errorMessage }}
-            </div>
-
-            <div
-              v-if="!appUpdateStore.supportsSelfUpdate"
-              class="mt-3 rounded-2xl bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-500"
-            >
-              当前环境不是 Android 内测包，暂不提供应用内安装更新。你仍然可以在这里查看版本状态与最近一次检查结果。
-            </div>
-
-            <div class="mt-4 flex gap-3">
-              <button
-                type="button"
-                class="flex-1 rounded-2xl border border-rose-200 text-rose-600 py-3 text-sm font-medium disabled:opacity-60"
-                :disabled="appUpdateStore.isChecking"
-                @click="checkForUpdates"
-              >
-                {{ appUpdateStore.isChecking ? '检查中...' : '检查更新' }}
-              </button>
-              <button
-                type="button"
-                class="flex-1 rounded-2xl bg-rose-500 text-white py-3 text-sm font-medium disabled:opacity-60"
-                :disabled="!appUpdateStore.supportsSelfUpdate || !appUpdateStore.hasUpdateAvailable || appUpdateStore.isUpdating"
-                @click="startUpdate"
-              >
-                {{ appUpdateStore.isUpdating ? '准备中...' : '立即更新' }}
-              </button>
-            </div>
-
-            <button
-              v-if="appUpdateStore.hasUpdateAvailable && !appUpdateStore.supportsSelfUpdate"
-              type="button"
-              class="mt-3 w-full rounded-2xl border border-gray-200 text-gray-600 py-3 text-sm font-medium"
-              @click="appUpdateStore.openDownloadPage"
-            >
-              打开下载链接
-            </button>
-          </div>
-
-          <div class="border-t border-gray-100"></div>
-
-          <div class="flex items-center justify-between p-4 active:bg-gray-50 cursor-pointer">
-            <div class="flex items-center gap-3">
-              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <div>
-                <div class="font-medium text-gray-800 text-sm">设置</div>
-                <div class="text-xs text-gray-500">通知、隐私等</div>
-              </div>
-            </div>
-            <span class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[11px]">计划中</span>
-          </div>
-
-          <div class="px-4 pb-4 text-xs text-gray-400">
-            通知与隐私设置将在后续版本补齐，当前先保留个人中心入口。
-          </div>
-
-          <div class="border-t border-gray-100"></div>
-
+        <div class="mt-4 flex flex-col gap-2 sm:flex-row">
           <button
             type="button"
-            class="w-full flex items-center gap-3 p-4 active:bg-gray-50 text-left"
-            @click="handleLogout"
+            class="secondary-button flex-1"
+            :disabled="appUpdateStore.isChecking"
+            @click="checkForUpdates"
           >
-            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            <div>
-              <div class="font-medium text-red-500 text-sm">退出登录</div>
-              <div class="text-xs text-gray-400">切换账户或退出当前账户</div>
-            </div>
+            {{ appUpdateStore.isChecking ? '检查中…' : '检查更新' }}
+          </button>
+          <button
+            type="button"
+            class="primary-button flex-1 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="!appUpdateStore.supportsSelfUpdate || !appUpdateStore.hasUpdateAvailable || appUpdateStore.isUpdating"
+            @click="startUpdate"
+          >
+            {{ appUpdateStore.isUpdating ? '准备中…' : '立即更新' }}
           </button>
         </div>
-      </div>
 
-      <!-- App Info -->
-      <div class="px-4 mt-6 text-center">
-        <div class="text-xs text-gray-400">她语 MoonCARE v{{ appUpdateStore.appInfo.versionName }}</div>
-        <div class="text-xs text-gray-300 mt-1">Build {{ appUpdateStore.appInfo.versionCode }} · {{ appUpdateStore.appInfo.flavor }}</div>
-      </div>
+        <button
+          v-if="appUpdateStore.hasUpdateAvailable && !appUpdateStore.supportsSelfUpdate"
+          type="button"
+          class="ghost-button mt-3 w-full"
+          @click="appUpdateStore.openDownloadPage"
+        >
+          打开下载链接
+        </button>
+      </section>
+
+      <section class="page-card p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="section-label">设置</p>
+            <h2 class="mt-2 text-base font-semibold text-slate-800">仍在前台，但诚实标记为计划中</h2>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
+              通知、隐私和数据管理入口后续会补齐，当前先明确它还没有完成，而不是伪装成可用功能。
+            </p>
+          </div>
+          <span class="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-700">计划中</span>
+        </div>
+
+        <div class="mt-4 rounded-[1.25rem] border border-dashed border-amber-200 bg-amber-50/70 px-4 py-3 text-sm leading-6 text-amber-800">
+          这一组设置后续会承接通知、隐私说明、数据导出/删除等真实能力。现在先保留入口，不制造“已经可用”的错觉。
+        </div>
+      </section>
+
+      <section class="page-card p-4">
+        <button
+          type="button"
+          class="flex w-full items-center gap-3 rounded-[1.25rem] bg-rose-50 px-4 py-4 text-left transition-colors hover:bg-rose-100"
+          @click="handleLogout"
+        >
+          <div class="grid h-11 w-11 place-items-center rounded-2xl bg-white text-rose-500 shadow-sm">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-rose-600">退出登录</div>
+            <div class="mt-1 text-xs leading-5 text-slate-500">切换账户或退出当前账户。</div>
+          </div>
+        </button>
+
+        <div class="mt-4 text-center text-xs text-slate-400">
+          她语 MoonCARE v{{ appUpdateStore.appInfo.versionName }}
+          <div class="mt-1">Build {{ appUpdateStore.appInfo.versionCode }} · {{ appUpdateStore.appInfo.flavor }}</div>
+        </div>
+      </section>
     </div>
-
-    <!-- Bottom Nav -->
-    <BottomNav />
   </div>
 </template>
 
 <script setup>
-import BottomNav from '../components/BottomNav.vue'
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHealthStore } from '../stores/health'
@@ -229,23 +199,31 @@ const healthStore = useHealthStore()
 const authStore = useAuthStore()
 const appUpdateStore = useAppUpdateStore()
 
+const toolLinks = [
+  { path: '/music', label: '音乐陪伴', helper: '适合在需要情绪缓冲时先切换到更轻的节奏。', icon: '🎵' },
+  { path: '/breathing', label: '呼吸练习', helper: '适合在紧张、烦躁或需要先稳住身体感受时使用。', icon: '🍃' },
+  { path: '/wave', label: '波形监测', helper: '查看生理波动和设备状态，区分真实数据与演示模式。', icon: '📈' },
+  { path: '/cycle', label: '周期记录', helper: '补充经期记录，帮助后续预测和首页摘要更稳。', icon: '🗓️' }
+]
+
 const cyclePrediction = computed(() => healthStore.cyclePrediction)
 
-function getPhaseName(phase) {
+const nextPeriodLabel = computed(() => {
+  if (!cyclePrediction.value?.predicted_start) return '还需要更多记录'
+  const date = new Date(cyclePrediction.value.predicted_start)
+  return `${date.getMonth() + 1} 月 ${date.getDate()} 日左右`
+})
+
+const currentPhaseLabel = computed(() => {
+  const phase = cyclePrediction.value?.current_phase
   const names = {
     follicular: '卵泡期',
     ovulation: '排卵期',
     luteal: '黄体期',
     menstrual: '经期'
   }
-  return names[phase] || phase
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
-}
+  return names[phase] || '待判断'
+})
 
 function handleLogout() {
   authStore.logout()
@@ -271,16 +249,9 @@ async function startUpdate() {
 }
 
 onMounted(async () => {
-  await Promise.all([
+  await Promise.allSettled([
     healthStore.fetchCyclePrediction(),
     appUpdateStore.initialize()
   ])
 })
 </script>
-
-<style scoped>
-.profile-page {
-  min-height: 100vh;
-  background: #f9fafb;
-}
-</style>

@@ -1,213 +1,177 @@
 <template>
-  <div class="home-page">
-    <div class="max-w-lg mx-auto pb-16">
-      <!-- Header -->
-      <div class="px-4 pt-4 pb-3">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="text-lg font-bold text-gray-800">女性情绪周期</span>
-            <span class="px-2 py-0.5 text-xs bg-pink-100 text-pink-600 rounded-full">发现</span>
+  <div class="app-page">
+    <div class="page-content page-stack">
+      <section class="page-card-soft overflow-hidden p-5">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="inline-flex items-center gap-2 rounded-full bg-white/85 px-3 py-1 text-xs font-medium text-rose-600">
+              <span>MoonCARE</span>
+              <span class="h-1 w-1 rounded-full bg-rose-300"></span>
+              <span>{{ currentDate }}</span>
+            </div>
+            <h1 class="mt-4 text-[1.6rem] font-bold leading-tight text-slate-800">
+              {{ greetingTitle }}
+            </h1>
+            <p class="page-subtitle max-w-[26rem]">
+              {{ greetingSubtitle }}
+            </p>
           </div>
-          <div class="flex items-center gap-3">
-            <button @click="goToNotifications" class="text-gray-500 hover:text-pink-500 transition-colors">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-              </svg>
+
+          <button type="button" class="icon-button shrink-0" aria-label="打开个人中心" @click="goToProfile">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="mt-6 rounded-[1.4rem] bg-white/95 p-4 shadow-[0_20px_45px_rgba(236,72,153,0.14)]">
+          <div class="flex items-start gap-4">
+            <div class="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-rose-400 to-pink-500 text-2xl text-white shadow-[0_16px_30px_rgba(236,72,153,0.22)]">
+              💗
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-slate-800">{{ chatCtaTitle }}</p>
+              <p class="mt-1 text-sm leading-6 text-slate-500">
+                聊天会继续承接你的情绪、身体感受和周期变化，也会在需要时给出轻量照护建议，仅供参考。
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button type="button" class="primary-button flex-1" @click="openChat">
+              {{ chatCtaLabel }}
             </button>
-            <button @click="goToProfile" class="text-gray-500 hover:text-pink-500 transition-colors">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- AI Chat Entry - Main Focus (Visual Design) -->
-      <div class="px-4 mt-6">
-        <!-- Avatar Circle -->
-        <div class="flex justify-center mb-3">
-          <div class="relative">
-            <div class="w-28 h-28 rounded-full bg-gradient-to-br from-pink-300 to-pink-400 flex items-center justify-center shadow-lg">
-              <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="40" cy="45" rx="30" ry="25" fill="#FFD6E0"/>
-                <ellipse cx="40" cy="45" rx="25" ry="20" fill="#FFB3C1"/>
-                <circle cx="30" cy="40" r="5" fill="#5D4E60"/>
-                <circle cx="50" cy="40" r="5" fill="#5D4E60"/>
-                <circle cx="31.5" cy="38.5" r="2" fill="white"/>
-                <circle cx="51.5" cy="38.5" r="2" fill="white"/>
-                <ellipse cx="40" cy="50" rx="4" ry="2.5" fill="#FF6B8A"/>
-                <ellipse cx="25" cy="30" rx="7" ry="5" fill="#FFD6E0" opacity="0.8"/>
-                <ellipse cx="55" cy="30" rx="7" ry="5" fill="#FFD6E0" opacity="0.8"/>
-              </svg>
-            </div>
-            <!-- Online indicator -->
-            <div class="absolute bottom-1 right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white"></div>
-          </div>
-        </div>
-
-        <!-- Greeting -->
-        <div class="text-center mb-2">
-          <h2 class="text-base font-semibold text-gray-800">{{ greetingMessage }}</h2>
-          <p class="text-xs text-gray-500">{{ currentDate }}</p>
-        </div>
-
-        <!-- Subtitle -->
-        <div class="text-center mb-6">
-          <p class="text-sm text-pink-500">发现你的情绪空间</p>
-        </div>
-
-        <!-- Chat Button -->
-        <router-link
-          to="/chat"
-          class="flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-pink-400 to-pink-500 rounded-full shadow-lg active:scale-[0.98] transition-transform"
-        >
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-          </svg>
-          <span class="text-white font-medium">和情绪宝宝聊聊</span>
-        </router-link>
-      </div>
-
-      <!-- Quick Actions -->
-      <div class="px-4 mt-6">
-        <div class="bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl p-4">
-          <div class="grid grid-cols-3 gap-3">
-            <router-link
-              to="/diary"
-              class="flex flex-col items-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform"
-            >
-              <span class="text-2xl">📝</span>
-              <span class="text-xs font-semibold text-gray-700">今日日记</span>
-            </router-link>
-            <router-link
-              to="/music"
-              class="flex flex-col items-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform"
-            >
-              <span class="text-2xl">🎵</span>
-              <span class="text-xs font-semibold text-gray-700">音乐疗愈</span>
-            </router-link>
-            <router-link
-              to="/breathing"
-              class="flex flex-col items-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform"
-            >
-              <span class="text-2xl">🌬️</span>
-              <span class="text-xs font-semibold text-gray-700">呼吸引导</span>
+            <router-link to="/diary" class="secondary-button flex flex-1 items-center justify-center">
+              先写一则日记
             </router-link>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Status Cards -->
-      <div class="px-4 mt-6 space-y-3">
-        <!-- Phase & PMS Risk -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
-          <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center gap-2">
-              <span class="text-xl">{{ phaseEmoji }}</span>
-              <span class="font-medium text-gray-700 text-sm">{{ phaseName }}</span>
-              <span class="text-xs text-pink-500">{{ phasePredictionText }}</span>
-            </div>
-            <span
-              class="text-xs font-medium px-2 py-0.5 rounded-full"
-              :class="riskClass"
-            >
-              {{ riskLabel }}
-            </span>
+      <section class="page-card p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="section-label">周期摘要</p>
+            <h2 class="mt-2 text-base font-semibold text-slate-800">
+              {{ phaseEmoji }} {{ phaseName }}
+            </h2>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
+              {{ cycleSummaryText }}
+            </p>
           </div>
-          <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              class="h-full rounded-full transition-all duration-500"
-              :class="riskBarClass"
-              :style="{ width: `${pmsRisk * 100}%` }"
-            ></div>
-          </div>
+          <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="riskClass">
+            {{ riskLabel }}
+          </span>
         </div>
 
-        <!-- Mood Level -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
-          <div class="flex items-center gap-3">
-            <span class="text-xl">☀️</span>
-            <div class="flex-1">
-              <div class="font-medium text-gray-700 text-sm">今日情绪</div>
-              <div class="flex items-center gap-1">
-                <span class="font-semibold text-gray-800">{{ moodLevel.toFixed(1) }}</span>
-                <span class="text-xs text-gray-400">/ 10</span>
-              </div>
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <div class="rounded-2xl bg-rose-50 px-3 py-3">
+            <div class="text-xs text-slate-500">经前关注度</div>
+            <div class="mt-2 text-lg font-semibold text-rose-600">
+              {{ Math.round(pmsRisk * 100) }}%
             </div>
-            <div class="text-xs text-gray-500">
+            <div class="mt-1 text-xs text-slate-500">{{ riskHintText }}</div>
+          </div>
+          <div class="rounded-2xl bg-slate-50 px-3 py-3">
+            <div class="text-xs text-slate-500">下一次月经</div>
+            <div class="mt-2 text-sm font-semibold text-slate-800">
+              {{ phasePredictionText || '还需要更多记录' }}
+            </div>
+            <div class="mt-1 text-xs text-slate-500">记录越完整，预测越稳定。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page-card p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="section-label">今日状态</p>
+            <h2 class="mt-2 text-base font-semibold text-slate-800">
+              情绪 {{ moodLevel.toFixed(1) }} / 10
+            </h2>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
               {{ moodDescription }}
+            </p>
+          </div>
+          <div class="rounded-2xl bg-amber-50 px-3 py-2 text-right">
+            <div class="text-xs text-slate-500">陪伴提示</div>
+            <div class="mt-1 text-sm font-medium text-amber-700">{{ supportFocusText }}</div>
+          </div>
+        </div>
+
+        <div class="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+          {{ statusSummaryText }}
+        </div>
+      </section>
+
+      <section class="page-card p-4">
+        <div class="flex items-end justify-between gap-3">
+          <div>
+            <p class="section-label">照护工具</p>
+            <h2 class="mt-2 text-base font-semibold text-slate-800">辅助功能仍然可见</h2>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
+              音乐、呼吸和波形监测从一级导航下移，但不会消失。
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <router-link
+            v-for="tool in toolEntries"
+            :key="tool.path"
+            :to="tool.path"
+            class="rounded-[1.25rem] border border-rose-100 bg-rose-50/70 p-4 transition-transform active:scale-[0.98]"
+          >
+            <div class="text-2xl">{{ tool.icon }}</div>
+            <div class="mt-3 text-sm font-semibold text-slate-800">{{ tool.label }}</div>
+            <div class="mt-1 text-xs leading-5 text-slate-500">{{ tool.helper }}</div>
+          </router-link>
+        </div>
+      </section>
+
+      <section class="page-card-soft p-4">
+        <p class="section-label">今日提醒</p>
+        <div class="mt-3 grid gap-3">
+          <div class="rounded-2xl bg-white/90 px-4 py-3">
+            <div class="text-sm font-medium text-slate-800">关于经前状态</div>
+            <div class="mt-1 text-sm leading-6 text-slate-500">
+              经前状态了解会继续并入正常聊天，不会变成显性筛查入口；如果你愿意，直接从聊天开始即可。
+            </div>
+          </div>
+          <div class="rounded-2xl bg-white/90 px-4 py-3">
+            <div class="text-sm font-medium text-slate-800">关于数据完整度</div>
+            <div class="mt-1 text-sm leading-6 text-slate-500">
+              周期预测、今日情绪和后续小结都依赖你留下的记录。缺失数据时，MoonCARE 会尽量诚实地提示“不足以判断”。
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- 波动曲线 & 经前状态了解 -->
-      <div class="px-4 mt-4 grid grid-cols-2 gap-3">
-        <router-link
-          to="/wave"
-          class="flex flex-col items-center justify-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform"
-        >
-          <span class="text-2xl">📈</span>
-          <span class="text-xs text-gray-700">波动曲线</span>
-        </router-link>
-        <div
-          @click="startStateChat"
-          class="flex flex-col items-center justify-center gap-1 p-3 bg-white rounded-xl border border-gray-100 active:scale-95 transition-transform cursor-pointer"
-        >
-          <span class="text-2xl">🩷</span>
-          <span class="text-xs text-gray-700">经前状态聊聊</span>
-        </div>
-      </div>
-
+      </section>
     </div>
-
-    <!-- Bottom Navigation -->
-    <BottomNav />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useHealthStore } from '../stores/health'
 import { useChatStore } from '../stores/chat'
-import { useRouter } from 'vue-router'
-import BottomNav from '../components/BottomNav.vue'
 
 const router = useRouter()
 const healthStore = useHealthStore()
 const chatStore = useChatStore()
 
+const toolEntries = [
+  { path: '/music', label: '音乐陪伴', helper: '先让情绪慢一点，再决定要不要继续聊。', icon: '🎵' },
+  { path: '/breathing', label: '呼吸练习', helper: '适合先稳定呼吸节奏，给自己一点缓冲。', icon: '🍃' },
+  { path: '/wave', label: '波形监测', helper: '查看设备侧生理波动，区分真实数据和演示状态。', icon: '📈' }
+]
+
 const currentDate = computed(() => {
   return new Date().toLocaleDateString('zh-CN', {
-    month: 'short',
+    month: 'long',
     day: 'numeric',
-    weekday: 'short'
+    weekday: 'long'
   })
-})
-
-const greetingMessage = computed(() => {
-  const level = moodLevel.value
-  const risk = healthStore.riskLevel
-  const phase = cyclePrediction.value?.current_phase
-
-  if (level >= 8) {
-    return '今天心情很棒，继续保持 💖'
-  }
-  if (level >= 6) {
-    return '今天感觉不错哦 ✨'
-  }
-  if (level >= 4) {
-    return '今天感觉怎么样？'
-  }
-  if (risk === 'high' || risk === 'critical') {
-    return '今天有点艰难，我在这里陪你 💙'
-  }
-  if (phase === 'luteal' || phase === 'menstrual') {
-    return '特殊时期，对自己好一点 🌸'
-  }
-  return '今天感觉怎么样？'
 })
 
 const phaseEmoji = computed(() => healthStore.phaseEmoji)
@@ -216,100 +180,130 @@ const pmsRisk = computed(() => healthStore.pmsRisk)
 const moodLevel = computed(() => healthStore.moodLevel)
 const cyclePrediction = computed(() => healthStore.cyclePrediction)
 
-const moodEmoji = computed(() => {
-  if (moodLevel.value >= 8) return '😊'
-  if (moodLevel.value >= 6) return '🙂'
-  if (moodLevel.value >= 4) return '😐'
-  if (moodLevel.value >= 2) return '😔'
-  return '😢'
+const greetingTitle = computed(() => {
+  if (healthStore.riskLevel === 'high' || healthStore.riskLevel === 'critical') {
+    return '今天如果有点难熬，我们就先从陪伴开始。'
+  }
+  if (moodLevel.value >= 7.5) {
+    return '状态不错的时候，也值得被轻轻接住。'
+  }
+  if (cyclePrediction.value?.current_phase === 'luteal') {
+    return '黄体期里更敏感一点，也很正常。'
+  }
+  return '先看看今天的状态，再决定怎么照顾自己。'
 })
 
+const greetingSubtitle = computed(() => {
+  if (chatStore.sessionId) {
+    return '你可以继续上次的聊天，也可以从今天的情绪、身体感受或周期变化重新开始。'
+  }
+  return '首页先给你一个简洁入口：聊天主链路在前，周期和日记作为补充，不再让导航分散注意力。'
+})
+
+const chatCtaTitle = computed(() => chatStore.sessionId ? '上次的对话还在，可以继续聊。' : '今天先从一段对话开始。')
+const chatCtaLabel = computed(() => chatStore.sessionId ? '继续聊聊' : '开始聊聊')
+
 const phasePredictionText = computed(() => {
-  // Use healthStore.currentPhase which is set by emotion API
-  if (healthStore.currentPhase !== 'luteal') return ''
+  const prediction = cyclePrediction.value
+  if (!prediction) return ''
 
-  const pred = cyclePrediction.value
-  if (!pred) return ''
-
-  if (pred.predicted_start) {
-    const date = new Date(pred.predicted_start)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    // If predicted date is in the future, use it
-    if (date >= today) {
-      return `${date.getMonth() + 1}月${date.getDate()}日可能来潮`
-    }
+  if (prediction.predicted_start) {
+    const date = new Date(prediction.predicted_start)
+    return `${date.getMonth() + 1} 月 ${date.getDate()} 日左右`
   }
-  // Fallback: calculate from phase_days_remaining
-  if (pred.phase_days_remaining !== undefined) {
+
+  if (prediction.phase_days_remaining !== undefined) {
     const futureDate = new Date()
-    futureDate.setDate(futureDate.getDate() + pred.phase_days_remaining)
-    return `${futureDate.getMonth() + 1}月${futureDate.getDate()}日可能来潮`
+    futureDate.setDate(futureDate.getDate() + prediction.phase_days_remaining)
+    return `${futureDate.getMonth() + 1} 月 ${futureDate.getDate()} 日左右`
   }
+
   return ''
+})
+
+const cycleSummaryText = computed(() => {
+  if (!cyclePrediction.value) {
+    return '还没有足够的周期记录。先补几次经期开始时间，后续预测才会更稳。'
+  }
+
+  if (cyclePrediction.value.current_phase === 'luteal') {
+    return '当前更需要留意情绪起伏、睡眠和身体疲劳感。聊天里会继续轻量承接这些变化。'
+  }
+
+  return '这里先给你阶段摘要和预测窗口，具体感受仍然以你自己的记录和聊天反馈为准。'
 })
 
 const riskLabel = computed(() => {
   const labels = {
-    critical: '危险',
-    high: '高风险',
+    critical: '需要优先关注',
+    high: '偏高',
     medium: '中等',
-    low: '低风险'
+    low: '较低'
   }
-  return labels[healthStore.riskLevel] || '未知'
+  return labels[healthStore.riskLevel] || '待判断'
 })
 
 const riskClass = computed(() => {
   const classes = {
     critical: 'bg-red-100 text-red-700',
     high: 'bg-orange-100 text-orange-700',
-    medium: 'bg-yellow-100 text-yellow-700',
-    low: 'bg-green-100 text-green-700'
+    medium: 'bg-amber-100 text-amber-700',
+    low: 'bg-emerald-100 text-emerald-700'
   }
-  return classes[healthStore.riskLevel] || 'bg-gray-100 text-gray-700'
+  return classes[healthStore.riskLevel] || 'bg-slate-100 text-slate-600'
 })
 
-const riskBarClass = computed(() => {
-  const classes = {
-    critical: 'bg-red-500',
-    high: 'bg-orange-500',
-    medium: 'bg-yellow-500',
-    low: 'bg-green-500'
+const riskHintText = computed(() => {
+  if (healthStore.riskLevel === 'critical' || healthStore.riskLevel === 'high') {
+    return '建议优先回到聊天，先说说眼前最难受的部分。'
   }
-  return classes[healthStore.riskLevel] || 'bg-gray-500'
+  if (cyclePrediction.value?.current_phase === 'luteal') {
+    return '黄体期里更容易出现烦躁或疲惫，仅供参考。'
+  }
+  return '这不是诊断，只是当前数据下的轻量提示。'
 })
 
 const moodDescription = computed(() => {
-  if (moodLevel.value >= 8) return '非常愉悦'
-  if (moodLevel.value >= 6) return '心情不错'
-  if (moodLevel.value >= 4) return '情绪一般'
-  if (moodLevel.value >= 2) return '情绪低落'
-  return '需要关注'
+  if (moodLevel.value >= 8) return '整体偏轻松，可以继续保持自己的节奏。'
+  if (moodLevel.value >= 6) return '状态还可以，如果有小波动，也适合先通过聊天整理一下。'
+  if (moodLevel.value >= 4) return '今天的情绪比较普通，既可以记录，也可以直接去聊天里展开。'
+  if (moodLevel.value >= 2) return '今天可能更疲惫或更敏感，先把强烈感受说出来会更有帮助。'
+  return '当前状态需要更多关注，先减少额外压力，再慢慢处理眼前的问题。'
 })
 
-onMounted(async () => {
-  await healthStore.fetchEmotionState()
-  await healthStore.fetchPhaseInfo()
-  await healthStore.fetchCyclePrediction()
-  await healthStore.fetchRecommendations()
+const supportFocusText = computed(() => {
+  if (healthStore.riskLevel === 'critical' || healthStore.riskLevel === 'high') return '先陪伴，再分析'
+  if (cyclePrediction.value?.current_phase === 'luteal') return '留意黄体期波动'
+  return '可以按你自己的节奏来'
 })
 
-function goToNotifications() {
-  router.push('/profile')
+const statusSummaryText = computed(() => {
+  if (chatStore.assessmentSummary?.summary_available) {
+    return '聊天里已经有一部分经前状态小结可继续承接。你不需要重新开始，回到聊天页就能延续。'
+  }
+  if (!cyclePrediction.value) {
+    return '目前的摘要更多来自当下情绪数据。补充日记和周期记录后，这里的内容会更完整。'
+  }
+  return '首页只保留必要摘要，避免把过多解释堆在一屏里。需要更细的感受整理时，聊天会是主入口。'
+})
+
+async function loadHomeState() {
+  await Promise.allSettled([
+    healthStore.fetchEmotionState(),
+    healthStore.fetchPhaseInfo(),
+    healthStore.fetchCyclePrediction()
+  ])
+}
+
+function openChat() {
+  router.push('/chat')
 }
 
 function goToProfile() {
   router.push('/profile')
 }
 
-function startStateChat() {
-  router.push('/chat')
-}
+onMounted(() => {
+  loadHomeState()
+})
 </script>
-
-<style scoped>
-.home-page {
-  min-height: 100vh;
-  background: #f9fafb;
-}
-</style>

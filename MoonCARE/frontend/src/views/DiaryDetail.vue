@@ -1,5 +1,5 @@
 <template>
-  <div class="diary-detail-page">
+  <div class="app-page">
     <Transition name="toast">
       <div
         v-if="toastMessage"
@@ -11,7 +11,7 @@
       </div>
     </Transition>
 
-    <div class="max-w-lg mx-auto pb-16 px-4">
+    <div class="page-content page-stack">
       <div class="flex items-center gap-4 pt-4 pb-3">
         <button
           type="button"
@@ -180,8 +180,6 @@
       </div>
     </div>
 
-    <BottomNav />
-
     <Transition name="modal">
       <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="showDeleteConfirm = false">
         <div class="bg-white rounded-2xl p-6 w-full max-w-sm transform">
@@ -213,7 +211,6 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDiaryStore } from '../stores/diary'
-import BottomNav from '../components/BottomNav.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -359,11 +356,6 @@ export default {
 </script>
 
 <style scoped>
-.diary-detail-page {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #fef7f8 0%, #f9fafb 100%);
-}
-
 .toast-enter-active,
 .toast-leave-active {
   transition: all 0.3s ease;

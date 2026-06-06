@@ -2,7 +2,7 @@
 
 > 变更日期：2026-05-21  
 > 影响范围：`Dockerfile`、`docker-compose.yml`、`entrypoint.sh`、根目录 `.env.example`、服务器部署验证流程  
-> 当前状态：已完成基础配置修正；已确认 Nginx 1.28.3、一体化镜像、临时 IP 访问、NVIDIA provider、`/www/backup` 30 日备份策略；NVIDIA 真实端点、服务器 Nginx 配置和恢复演练仍需要验证  
+> 当前状态：已完成基础配置修正；已确认 Nginx 1.28.3、一体化镜像、临时 IP 访问、NVIDIA provider、`/www/backup` 30 日备份策略；Redis 基础设施已加入 Compose，且不再纳入外部记忆服务；NVIDIA 真实端点、服务器 Nginx 配置和恢复演练仍需要验证  
 
 ## 1. 部署目标
 
@@ -27,8 +27,7 @@ MoonCARE 当前默认部署方向是 Docker + 服务器。本文只覆盖工程�
 | --- | --- | --- | --- |
 | `app` | 已完成基础配置 | 构建前端 `dist`，运行 FastAPI + gunicorn + uvicorn worker，并执行 Alembic 迁移 | 默认绑定 `127.0.0.1:8000`，加入 `mooncare-net` |
 | `postgres` | 已完成基础配置 | PostgreSQL 15，保存用户、聊天、周期、日记、评估等持久化数据 | 默认绑定 `127.0.0.1:5432`，数据写入 `postgres_data` volume |
-| `redis` | 计划中/可选 | 语义缓存或后续限流缓存 | 当前未加入 Compose；启用前需要隔离和容量评估 |
-| `awareness` | 需要验证/可选 | 本地记忆服务 | 生产启用前必须完成多用户隔离审计 |
+| `redis` | 已完成基础配置 | Redis 基础设施，预留给后续缓存、限流或队列 | 已加入 Compose，默认仅绑定 `127.0.0.1:6379`；当前语义缓存仍是进程内实现 |
 
 当前 Compose 健康检查：
 
@@ -51,13 +50,13 @@ MoonCARE 当前默认部署方向是 Docker + 服务器。本文只覆盖工程�
 | `APP_BIND_ADDR` / `APP_PORT` | string/int | `127.0.0.1` / `8000` | 建议只暴露给本机反向代理，不直接公网开放 |
 | `POSTGRES_BIND_ADDR` / `POSTGRES_PORT` | string/int | `127.0.0.1` / `5432` | 建议只绑定本机；远程管理通过 SSH tunnel |
 | `BACKUP_DIR` / `BACKUP_RETENTION_DAYS` | string/int | `/www/backup` / `30` | 服务器备份脚本使用；当前应用本身不读取 |
-| `SEMANTIC_CACHE_ENABLED` / `REDIS_URL` | bool/string | `false` / 空 | Redis 未部署时保持关闭 |
-| `AWARENESS_MEMORY_ENABLED` / `AWARENESS_BASE_URL` | bool/string | `false` / `host.docker.internal` | 生产启用前需做多用户隔离和隐私审查 |
+| `REDIS_BIND_ADDR` / `REDIS_PORT` / `REDIS_URL` | string/int/string | `127.0.0.1` / `6379` / `redis://redis:6379` | Redis 基础设施已加入 Compose；当前仅作为缓存/限流/队列预留，不要求主功能依赖 Redis 才能运行 |
+| `SEMANTIC_CACHE_ENABLED` | bool | `false` | 当前语义缓存仍是本地进程内实现；生产默认保持关闭或经验证后再启用 |
 | `LLM_REQUEST_TIMEOUT_SECONDS` / `CHAT_AGENT_REPLY_TIMEOUT_SECONDS` | number | `45` | 控制 LLM 等待时间，保留危机安全兜底和超时 fallback |
 
 注意：当前 `backend/app/config.py` 仍允许默认 SQLite 和开发密钥。Docker 服务器部署必须以根目录 `.env` 和 Compose 注入为准，不得使用代码默认值作为生产配置。
 
-Compose 已为 `app` 配置 `host.docker.internal:host-gateway`。如果后续把 vLLM、Awareness 或内部 LLM 网关跑在宿主机而不是同一个 Compose 网络中，可以用 `http://host.docker.internal:<port>` 访问；如果这些服务也容器化，优先改为服务名访问。
+Compose 已为 `app` 配置 `host.docker.internal:host-gateway`。如果后续把 vLLM 或内部 LLM 网关跑在宿主机而不是同一个 Compose 网络中，可以用 `http://host.docker.internal:<port>` 访问；如果这些服务也容器化，优先改为服务名访问。
 
 ## 5. 前端部署三种分支
 
@@ -123,6 +122,13 @@ MoonCARE 使用 OpenAI-compatible 接口接入不同 provider。当前已确认�
 危机表达必须优先走安全通道。部署验证不能只测普通聊天，还要覆盖危机样例在 REST、SSE、WebSocket 下不会绕过安全层。
 
 ## 10. 验证命令
+
+操作型交付物已补齐，建议直接按 [server-deployment-runbook.md](E:/MobileMoonCARE/MoonCARE/docs/server-deployment-runbook.md) 执行：
+
+- `deploy/env/server.env.example`
+- `deploy/scripts/backup_postgres.sh`
+- `deploy/scripts/restore_postgres.sh`
+- `deploy/scripts/smoke_check.sh`
 
 基础配置验证：
 

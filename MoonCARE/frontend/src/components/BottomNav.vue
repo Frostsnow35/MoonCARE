@@ -1,36 +1,15 @@
 <template>
-  <nav class="fixed bottom-0 left-0 right-0 bg-white z-50 safe-area-pb" style="box-shadow: 0 -2px 10px rgba(0,0,0,0.05);">
-    <div class="flex justify-around items-center h-14 max-w-lg mx-auto relative">
-      <div
-        class="absolute top-0 h-0.5 bg-gradient-to-r from-pink-400 to-pink-500 transition-all duration-300"
-        :style="activeBarStyle"
-      ></div>
-
+  <nav class="bottom-nav lg:hidden" aria-label="底部主导航">
+    <div class="bottom-nav-inner">
       <router-link
         v-for="item in navItems"
-        :key="item.path"
+        :key="item.id"
         :to="item.path"
-        class="nav-item flex flex-col items-center justify-center w-full h-full transition-all duration-200"
-        :class="isActive(item.path) ? 'text-pink-500' : 'text-gray-400'"
+        class="bottom-nav-item"
+        :class="{ active: activeNavId === item.id }"
       >
-        <div class="mb-0.5 transition-transform duration-200" :class="isActive(item.path) ? 'scale-110' : ''">
-          <svg v-if="item.icon === 'home'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
-          <svg v-else-if="item.icon === 'diary'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          <svg v-else-if="item.icon === 'cycle'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <svg v-else-if="item.icon === 'chat'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-          <svg v-else-if="item.icon === 'user'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-        </div>
-        <span class="text-xs font-medium">{{ item.label }}</span>
+        <span class="text-[1.15rem]">{{ item.icon }}</span>
+        <span>{{ item.label }}</span>
       </router-link>
     </div>
   </nav>
@@ -43,46 +22,61 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 
 const navItems = [
-  { path: '/', label: '首页', icon: 'home' },
-  { path: '/diary', label: '日记', icon: 'diary' },
-  { path: '/cycle', label: '周期', icon: 'cycle' },
-  { path: '/chat', label: '聊聊', icon: 'chat' },
-  { path: '/profile', label: '我的', icon: 'user' }
+  { id: 'home', label: '首页', path: '/home', icon: '🏠' },
+  { id: 'chat', label: '聊天', path: '/chat', icon: '💬' },
+  { id: 'diary', label: '日记', path: '/diary', icon: '📝' },
+  { id: 'cycle', label: '周期', path: '/cycle', icon: '🗓️' },
+  { id: 'profile', label: '我的', path: '/profile', icon: '👤' }
 ]
 
-const activeIndex = computed(() => {
-  const index = navItems.findIndex(item => {
-    if (item.path === '/') {
-      return route.path === '/'
-    }
-    return route.path.startsWith(item.path)
-  })
-  return index >= 0 ? index : 0
-})
-
-const activeBarStyle = computed(() => {
-  const width = 100 / navItems.length
-  const left = activeIndex.value * width
-  return {
-    width: `${width}%`,
-    left: `${left}%`
-  }
-})
-
-function isActive(path) {
-  if (path === '/') {
-    return route.path === '/'
-  }
-  return route.path.startsWith(path)
-}
+const activeNavId = computed(() => route.meta.navGroup || 'home')
 </script>
 
 <style scoped>
-.safe-area-pb {
-  padding-bottom: env(safe-area-inset-bottom, 0);
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  padding: 0.5rem 0.85rem calc(0.75rem + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(255, 250, 252, 0) 0%, rgba(255, 250, 252, 0.95) 24%, rgba(255, 250, 252, 0.98) 100%);
 }
 
-.nav-item:active {
-  opacity: 0.7;
+.bottom-nav-inner {
+  width: min(100%, 32rem);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding: 0.45rem;
+  border-radius: 1.35rem;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(244, 114, 182, 0.14);
+  box-shadow: 0 18px 40px rgba(190, 24, 93, 0.14);
+  backdrop-filter: blur(18px);
+}
+
+.bottom-nav-item {
+  min-height: 3.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  border-radius: 1rem;
+  color: #9ca3af;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.bottom-nav-item.active {
+  background: rgba(251, 207, 232, 0.44);
+  color: #be185d;
+}
+
+.bottom-nav-item:active {
+  transform: scale(0.97);
 }
 </style>

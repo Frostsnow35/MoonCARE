@@ -28,7 +28,7 @@ MoonCARE（她语）是一个已经存在的半成品项目，不是从零重写
 | 前端 | Vue 3、Composition API、Pinia、Axios、Vite | 聊天状态集中在 `frontend/src/stores/chat.js` |
 | AI | 多 Agent 路由系统、OpenAI-compatible LLM 接口 | 支持 `nvidia`、`openai`、`vllm`、`accelerated`、`zai` 等 provider 配置 |
 | 数据 | SQLite 默认用于本地；服务器部署优先使用 PostgreSQL 容器 | 迁移目录在 `backend/migrations/`，`docker-compose.yml` 已包含 Postgres 服务 |
-| 记忆 | ProductMemoryService、ChatMemory、可选 Awareness Local | Awareness 在 `localhost:37800`，失败时应回退 |
+| 记忆 | ProductMemoryService、ChatMemory、本地 DB 记忆 | 当前有效记忆来源为本地数据库；不再把外部记忆服务作为默认路线 |
 | 部署 | 本地 uvicorn + Vite；生产/演示主方向为 Docker + 服务器 | 前端最终部署方式暂未定；Railway/Vercel 配置只能作为历史参考，不能作为默认方案 |
 
 ### 2.1 部署工程思路
@@ -43,8 +43,7 @@ Server
   -> Docker Compose network
       -> mooncare-app: FastAPI + gunicorn + uvicorn worker
       -> mooncare-postgres: PostgreSQL persistent volume
-      -> optional redis: semantic cache
-      -> optional awareness: only after multi-user isolation review
+      -> mooncare-redis: Redis infrastructure for future cache/rate-limit/queue
 ```
 
 现有容器化基础：
@@ -91,7 +90,7 @@ Server
 | `backend/app/data/` | 知识库、嵌入数据、访谈流等静态数据 |
 | `backend/tests/` | 后端回归测试 |
 | `Dockerfile` | 当前一体化容器镜像雏形，包含前端 build 和后端运行 |
-| `docker-compose.yml` | 当前 Docker + 服务器部署编排雏形，包含 app 和 Postgres |
+| `docker-compose.yml` | 当前 Docker + 服务器部署编排雏形，包含 app、Postgres 和 Redis |
 | `entrypoint.sh` | 容器启动脚本，负责等待数据库和执行迁移 |
 | `frontend/src/views/` | Vue 页面：Chat、Home、Cycle、Diary、Breathing、Music、Profile 等 |
 | `frontend/src/stores/` | Pinia store，聊天/访谈状态必须优先用 `chatStore` |
@@ -302,9 +301,6 @@ pip install -r requirements.txt
 启动服务：
 
 ```bash
-# 可选：Awareness 本地记忆服务
-npm run awareness:start
-
 # 后端，仓库根目录执行
 python -m uvicorn app.main:app --app-dir backend --reload --port 8000
 
@@ -320,7 +316,6 @@ npm run dev
 | 前端 | `http://localhost:3000` 或 Vite 实际输出端口 |
 | 后端 | `http://localhost:8000` |
 | API 文档 | `http://localhost:8000/docs` |
-| Awareness | `http://localhost:37800` |
 
 常用验证：
 

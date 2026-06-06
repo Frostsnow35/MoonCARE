@@ -97,13 +97,13 @@ class Settings(BaseSettings):
     CONTEXT_WINDOW_SIZE: int = 10
     CONVERSATION_COMPACTION_USE_TIKTOKEN: bool = False
 
-    # Redis configuration for semantic caching
+    # Redis infrastructure reserved for future cache/rate-limit/queue services.
     REDIS_URL: str = "redis://localhost:6379"
     REDIS_MAX_CONNECTIONS: int = 100
     REDIS_CONNECTION_TIMEOUT: float = 0.3
     REDIS_SOCKET_TIMEOUT: float = 0.5
 
-    # Semantic cache configuration
+    # Current semantic cache is process-local and does not depend on Redis.
     SEMANTIC_CACHE_ENABLED: bool = False
     SEMANTIC_CACHE_TTL_HOURS: int = 24
     SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.85
