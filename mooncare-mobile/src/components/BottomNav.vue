@@ -127,8 +127,7 @@ function isActive(path) {
   bottom: 0;
   left: 0;
   z-index: 50;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(10px);
+  background: #ffffff;
   box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
   padding-bottom: env(safe-area-inset-bottom, 0);
 }

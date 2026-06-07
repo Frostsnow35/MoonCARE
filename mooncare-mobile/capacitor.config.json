@@ -3,9 +3,20 @@
   "appName": "MoonCAREMobile",
   "webDir": "dist",
   "allowMixedContent": true,
+  "server": {
+    "androidScheme": "https"
+  },
   "plugins": {
     "CapacitorHttp": {
       "enabled": true
+    },
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "正在扫描设备...",
+        "cancel": "取消",
+        "availableDevices": "可用设备",
+        "noDeviceFound": "未找到设备"
+      }
     }
   }
 }

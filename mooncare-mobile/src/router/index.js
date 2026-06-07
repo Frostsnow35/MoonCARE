@@ -105,6 +105,15 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('access_token')
   const isAuthenticated = Boolean(token)
+  // #region debug-point B:router-before-each
+  window.__MC_DBG?.('B', 'src/router/index.js:beforeEach', '[DEBUG] router beforeEach', {
+    to: to.fullPath,
+    from: from.fullPath,
+    requiresAuth: Boolean(to.meta.requiresAuth),
+    guestOnly: Boolean(to.meta.guestOnly),
+    isAuthenticated,
+  })
+  // #endregion
 
   if (to.meta.requiresAuth && !isAuthenticated) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
@@ -113,6 +122,16 @@ router.beforeEach((to, from, next) => {
   } else {
     next()
   }
+})
+
+router.afterEach((to, from) => {
+  // #region debug-point B:router-after-each
+  window.__MC_DBG?.('B', 'src/router/index.js:afterEach', '[DEBUG] router afterEach', {
+    to: to.fullPath,
+    from: from.fullPath,
+    name: String(to.name || ''),
+  })
+  // #endregion
 })
 
 export default router

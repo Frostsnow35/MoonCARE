@@ -225,7 +225,6 @@ const moodEmoji = computed(() => {
 })
 
 const phasePredictionText = computed(() => {
-  // Use healthStore.currentPhase which is set by emotion API
   if (healthStore.currentPhase !== 'luteal') return ''
 
   const pred = cyclePrediction.value
@@ -235,12 +234,10 @@ const phasePredictionText = computed(() => {
     const date = new Date(pred.predicted_start)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    // If predicted date is in the future, use it
     if (date >= today) {
       return `${date.getMonth() + 1}月${date.getDate()}日可能来潮`
     }
   }
-  // Fallback: calculate from phase_days_remaining
   if (pred.phase_days_remaining !== undefined) {
     const futureDate = new Date()
     futureDate.setDate(futureDate.getDate() + pred.phase_days_remaining)

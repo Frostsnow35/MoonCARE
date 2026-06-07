@@ -1,13 +1,59 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mooncare-mobile</title>
+    <title>MoonCARE</title>
+    <script>
+      // #region debug-point A:html-bootstrap
+      window.__MC_DBG_RUN_ID = 'post-fix'
+      window.__MC_DBG = function (hypothesisId, location, msg, data) {
+        const payload = {
+          sessionId: 'android-black-screen',
+          runId: window.__MC_DBG_RUN_ID || 'post-fix',
+          hypothesisId,
+          location,
+          msg,
+          data: data || {},
+          ts: Date.now(),
+        }
+        ;['http://10.0.2.2:7777/event', 'http://192.168.1.7:7777/event'].forEach((url) => {
+          try {
+            fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            }).catch(() => {})
+          } catch (_) {}
+        })
+      }
+      window.__MC_DBG('A', 'index.html:head', '[DEBUG] html parsed', {
+        href: location.href,
+        readyState: document.readyState,
+      })
+      document.addEventListener('DOMContentLoaded', function () {
+        window.__MC_DBG('A', 'index.html:domcontentloaded', '[DEBUG] dom content loaded', {
+          readyState: document.readyState,
+        })
+      })
+      window.addEventListener('load', function () {
+        window.__MC_DBG('A', 'index.html:load', '[DEBUG] window load', {
+          readyState: document.readyState,
+        })
+      })
+      // #endregion
+    </script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div style="min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #fff1f5; color: #1f2937; font-family: sans-serif;">
+        <div style="max-width: 320px; text-align: center;">
+          <div style="font-weight: 700; font-size: 18px; margin-bottom: 8px;">MoonCARE 正在启动</div>
+          <div style="font-size: 13px; color: #64748b;">如果长时间停留在这里，请重新安装最新 APK。</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

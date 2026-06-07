@@ -38,7 +38,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBleStore } from './stores/ble'
 
@@ -50,6 +50,21 @@ const bleStatusClass = computed(() => {
   if (bleStore.isConnected) return 'is-connected'
   if (bleStore.isConnecting) return 'is-connecting'
   return 'is-disconnected'
+})
+
+onMounted(() => {
+  // #region debug-point C:app-shell-mounted
+  window.__MC_DBG?.('C', 'src/App.vue:onMounted', '[DEBUG] app shell mounted', {
+    route: route.fullPath,
+    showAppChrome: showAppChrome.value,
+  })
+  nextTick(() => {
+    window.__MC_DBG?.('C', 'src/App.vue:nextTick', '[DEBUG] app shell nextTick', {
+      route: route.fullPath,
+      appShellChildren: document.querySelector('.app-shell')?.childElementCount || 0,
+    })
+  })
+  // #endregion
 })
 </script>
 
@@ -65,8 +80,7 @@ const bleStatusClass = computed(() => {
   top: 0;
   z-index: 40;
   border-bottom: 1px solid #ffe4e6;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(12px);
+  background: #ffffff;
 }
 
 .header-inner {
