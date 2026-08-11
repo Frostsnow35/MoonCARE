@@ -52,6 +52,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { resolveMediaUrl } from '../config/runtime'
 
 const props = defineProps({
   songs: {
@@ -117,12 +118,17 @@ function reportPlaybackError(error) {
   })
 }
 
+function resolveSongUrl(url) {
+  return resolveMediaUrl(url)
+}
+
 async function startPlayback() {
   if (!currentSong.value) return
 
   try {
-    if (audio.value.src !== currentSong.value.url) {
-      audio.value.src = currentSong.value.url
+    const resolved = resolveSongUrl(currentSong.value.url)
+    if (audio.value.src !== resolved) {
+      audio.value.src = resolved
       audio.value.load()
     }
     await audio.value.play()
@@ -152,7 +158,7 @@ function setIndex(index, shouldPlay = false) {
   currentIndex.value = index
   currentTime.value = 0
   duration.value = 0
-  audio.value.src = currentSong.value.url
+  audio.value.src = resolveSongUrl(currentSong.value.url)
   audio.value.load()
   emit('songChange', currentSong.value)
   if (shouldPlay || props.autoPlay) {

@@ -470,6 +470,29 @@ class AgentService:
             topic = f"{topic[: limit - 1]}…"
         return topic or "这件事"
 
+    def _is_llm_not_configured(self, exc: Exception) -> bool:
+        """Return whether an LLM init failure is simply a missing provider key."""
+        text = f"{exc}"
+        return any(
+            marker in text
+            for marker in (
+                "API_KEY must be set",
+                "API key must be provided",
+                "api key",
+                "LLM_PROVIDER",
+                "Unknown LLM_PROVIDER",
+                "not installed",
+            )
+        )
+
+    def _llm_not_configured_reply(self) -> str:
+        """User-facing copy when the AI provider is not configured yet."""
+        return (
+            "我还在准备中。当前 AI 服务还没有配置好（缺少模型 API Key），"
+            "所以暂时只能给你结构化的经期与情绪建议，无法进行自由对话。"
+            "请管理员在服务器的 .env 中填入 NVIDIA_API_KEY 后重启服务。"
+        )
+
     def _knowledge_degraded_reply(self, user_message: str) -> str:
         """Return a question-specific knowledge fallback without exposing runtime failure."""
         compact = "".join((user_message or "").split())
@@ -1064,7 +1087,12 @@ class AgentService:
                 llm_service = self._get_llm_service()
             except Exception as exc:
                 print(f"[AgentService] Streaming LLM unavailable, using soft fallback: {exc}")
-                fallback_reply = self._soft_error_fallback(user_message, state)
+                # LLM 未配置（如 NVIDIA_API_KEY 为空）时给出明确、可行动的用户提示，
+                # 而不是让聊天静默降级成与配置无关的通用回复。
+                if self._is_llm_not_configured(exc):
+                    fallback_reply = self._llm_not_configured_reply()
+                else:
+                    fallback_reply = self._soft_error_fallback(user_message, state)
                 if not start_sent:
                     yield {
                         "type": "start",

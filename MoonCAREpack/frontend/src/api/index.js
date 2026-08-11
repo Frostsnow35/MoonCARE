@@ -1,17 +1,18 @@
 import axios from 'axios'
-
-const api_base_url = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+import { getApiBaseUrl, getApiBaseForFetch } from '../config/runtime'
 
 const api = axios.create({
-  baseURL: api_base_url,
   timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }
 })
 
+// Resolve the API base per-request so the user-configurable server address
+// (Profile -> 服务器地址) takes effect without reloading the app.
 api.interceptors.request.use(
   config => {
+    config.baseURL = getApiBaseUrl()
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -117,14 +118,14 @@ export const chatAPI = {
       'Cache-Control': 'no-cache',
       'Content-Type': 'application/x-www-form-urlencoded',
     }
-    
+
     // 添加 Authorization header
     const token = localStorage.getItem('access_token')
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
     }
 
-    const response = await fetch(`${api_base_url}/chat/stream`, {
+    const response = await fetch(`${getApiBaseForFetch()}/chat/stream`, {
       method: 'POST',
       headers,
       body: params,

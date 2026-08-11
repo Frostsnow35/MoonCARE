@@ -77,7 +77,7 @@ if [ ! -f ".env" ]; then
     echo "Created .env from .env.example."
 fi
 
-if grep -Eq '^DB_PASSWORD=$|^DB_PASSWORD=replace_with_' .env; then
+if grep -Eiq '^DB_PASSWORD=$|^DB_PASSWORD=REPLACE_WITH_|^DB_PASSWORD=replace_with_' .env; then
     EXISTING_DB_PASSWORD="$(get_existing_db_password || true)"
     if [ -n "$EXISTING_DB_PASSWORD" ]; then
         set_env_value DB_PASSWORD "$EXISTING_DB_PASSWORD"
@@ -88,17 +88,19 @@ if grep -Eq '^DB_PASSWORD=$|^DB_PASSWORD=replace_with_' .env; then
     fi
 fi
 
-if grep -Eq '^SECRET_KEY=$|^SECRET_KEY=replace_with_' .env; then
+if grep -Eiq '^SECRET_KEY=$|^SECRET_KEY=REPLACE_WITH_|^SECRET_KEY=replace_with_' .env; then
     set_env_value SECRET_KEY "$(generate_secret)"
     echo "Generated SECRET_KEY in .env."
 fi
 
 # Optional integrations must not block database/app readiness. Keep them empty
-# until SMTP and provider keys are available on the server.
-if grep -Eq '^SMTP_USERNAME=replace_with_' .env; then set_env_value SMTP_USERNAME ""; fi
-if grep -Eq '^SMTP_PASSWORD=replace_with_' .env; then set_env_value SMTP_PASSWORD ""; fi
-if grep -Eq '^SMTP_FROM_EMAIL=replace_with_' .env; then set_env_value SMTP_FROM_EMAIL ""; fi
-if grep -Eq '^NVIDIA_API_KEY=replace_with_' .env; then set_env_value NVIDIA_API_KEY ""; fi
+# until SMTP and provider keys are available on the server. Placeholder values
+# are cleared instead of being deployed as literal strings.
+if grep -Eiq '^SMTP_HOST=REPLACE_WITH_|^SMTP_HOST=replace_with_' .env; then set_env_value SMTP_HOST ""; fi
+if grep -Eiq '^SMTP_USERNAME=REPLACE_WITH_|^SMTP_USERNAME=replace_with_' .env; then set_env_value SMTP_USERNAME ""; fi
+if grep -Eiq '^SMTP_PASSWORD=REPLACE_WITH_|^SMTP_PASSWORD=replace_with_' .env; then set_env_value SMTP_PASSWORD ""; fi
+if grep -Eiq '^SMTP_FROM_EMAIL=REPLACE_WITH_|^SMTP_FROM_EMAIL=replace_with_' .env; then set_env_value SMTP_FROM_EMAIL ""; fi
+if grep -Eiq '^NVIDIA_API_KEY=REPLACE_WITH_|^NVIDIA_API_KEY=replace_with_' .env; then set_env_value NVIDIA_API_KEY ""; fi
 
 if ! grep -q '^RUN_DB_MIGRATIONS=' .env; then
     echo 'RUN_DB_MIGRATIONS=false' >> .env

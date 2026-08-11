@@ -33,7 +33,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${APP_BIND_ADDR:-127.0.0.1}:${APP_PORT:-18000}:8000"
+      # APP_BIND_ADDR controls direct (no-Nginx) phone access:
+      #   127.0.0.1 = localhost only (use Nginx in front)
+      #   0.0.0.0   = accessible via http://<server-ip>:<APP_PORT> from phones
+      - "${APP_BIND_ADDR:-0.0.0.0}:${APP_PORT:-18000}:8000"
     volumes:
       - music_data:/app/backend/music
     environment:

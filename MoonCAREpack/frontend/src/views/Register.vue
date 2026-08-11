@@ -56,6 +56,23 @@
             </div>
           </div>
 
+          <div class="p-3 bg-blue-50/70 border border-blue-100 rounded-xl">
+            <label class="block text-xs font-medium text-blue-700 mb-1">
+              服务器地址（APK / 手机直连时填写）
+            </label>
+            <input
+              v-model.trim="serverBase"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="留空 = 与当前页面同源"
+              class="w-full px-3 py-2 rounded-lg border border-blue-200 bg-white text-sm focus:border-blue-400 focus:outline-none"
+            />
+            <p class="text-[11px] text-blue-500 mt-1">
+              例如 http://123.45.67.89:18000 。发送验证码前请先确认地址正确。
+            </p>
+          </div>
+
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">昵称（可选）</label>
             <input
@@ -113,6 +130,7 @@
 import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { getStoredServerBase, setStoredServerBase } from '../config/runtime'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -121,6 +139,7 @@ const email = ref('')
 const nickname = ref('')
 const emailCode = ref('')
 const password = ref('')
+const serverBase = ref(getStoredServerBase())
 const loading = ref(false)
 const codeLoading = ref(false)
 const countdown = ref(0)
@@ -157,6 +176,9 @@ async function sendRegisterCode() {
   errorMessage.value = ''
   successMessage.value = ''
 
+  // Persist server address before the email-code request is sent.
+  setStoredServerBase(serverBase.value)
+
   try {
     const response = await authStore.requestEmailCode(email.value, 'register')
     successMessage.value = response.message || '验证码已发送，请查收邮箱'
@@ -176,6 +198,7 @@ async function handleRegister() {
   successMessage.value = ''
 
   try {
+    setStoredServerBase(serverBase.value)
     await authStore.register(email.value, password.value, nickname.value || undefined, emailCode.value)
     successMessage.value = '注册成功，正在进入 MoonCARE...'
     window.setTimeout(() => {

@@ -1,15 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { chatAPI } from '../api'
+import { getWsBaseUrl, getApiBaseForFetch } from '../config/runtime'
 
 function getChatStorageKey() {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const userId = user?.id || 'guest'
   return `mooncare_chat_session_${userId}`
-}
-
-function getApiBaseUrl() {
-  return (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -60,18 +57,23 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function getWebSocketUrl() {
-    const explicitBase = import.meta.env.VITE_WS_BASE_URL
-    const apiBase = getApiBaseUrl()
+    const wsBase = getWsBaseUrl()
+    const apiBase = getApiBaseForFetch()
     const token = localStorage.getItem('access_token')
 
-    const base = explicitBase || (
-      /^https?:\/\//.test(apiBase)
-        ? apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:').replace(/\/api\/v1\/?$/, '')
-        : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${apiBase.replace(/\/api\/v1\/?$/, '')}`
-    )
+    // getWsBaseUrl() returns '' for same-origin deployments, in which case we
+    // derive ws(s):// from the current page location.
+    let base = wsBase
+    if (!base) {
+      if (/^https?:\/\//.test(apiBase)) {
+        base = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:').replace(/\/api\/v1\/?$/, '')
+      } else {
+        base = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${apiBase.replace(/\/api\/v1\/?$/, '')}`
+      }
+    }
 
-    const normalizedBase = base.replace(/\/$/, '')
-    return `${normalizedBase}/api/v1/chat/ws?token=${encodeURIComponent(token)}`
+    const normalizedBase = base.replace(/\/+$/, '')
+    return `${normalizedBase}/api/v1/chat/ws?token=${encodeURIComponent(token || '')}`
   }
 
   function startHeartbeat() {
@@ -150,7 +152,7 @@ export const useChatStore = defineStore('chat', () => {
       const token = localStorage.getItem('access_token')
       if (!token) return null
 
-      const response = await fetch(`${getApiBaseUrl()}/diary/today`, {
+      const response = await fetch(`${getApiBaseForFetch()}/diary/today`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

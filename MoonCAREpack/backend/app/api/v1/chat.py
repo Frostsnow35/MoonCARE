@@ -259,7 +259,9 @@ async def _websocket_chat_authenticated(websocket: WebSocket):
                 agent_mode=agent_mode,
             )
             if assessment_result.assessment_prompt_hint and not response.get("suppress_assessment_prompt"):
-                response["message"] = f"{response["message"]}\n\n{assessment_result.assessment_prompt_hint}"
+                hint = assessment_result.assessment_prompt_hint
+                current_message = response.get("message") or ""
+                response["message"] = f"{current_message}\n\n{hint}"
 
             needs_llm_followup = response.get("needs_llm_followup", False)
 

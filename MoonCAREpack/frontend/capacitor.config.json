@@ -1,0 +1,13 @@
+{
+  "appId": "com.mooncare.app",
+  "appName": "她语 MoonCARE",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true
+  }
+}

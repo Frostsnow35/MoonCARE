@@ -2,8 +2,8 @@
 
 MoonCAREpack is the Docker-first, GitHub-ready package for MoonCARE（她语）. It contains backend source, frontend source, database schema/migrations, knowledge-base files, and local music assets. It must not contain real `.env` files, runtime databases, logs, cache files, or user privacy data.
 
-> Change date: 2026-05-26  
-> Scope: package structure, GitHub handoff, Docker/server deployment, local development startup  
+> Change date: 2026-08-11  
+> Scope: package structure, Docker/server deployment, PWA + Capacitor Android APK, local development startup  
 > Status: ready for verification
 
 ## Included
@@ -16,6 +16,14 @@ MoonCAREpack is the Docker-first, GitHub-ready package for MoonCARE（她语）.
 | Knowledge base | Done | `backend/app/data/knowledge_base.json`, embeddings, and PSST flow data are included |
 | Music | Done | Local test music files are in `backend/music`; Docker persists this directory in `music_data`; runtime uploads matching `backend/music/upload-*` are ignored by Git |
 | Secrets | Done | `.env.example` is included; `.env` is ignored and must be created locally or on server |
+| PWA | Done | `manifest.json`, Service Worker, icons in `frontend/public`; installable once served over HTTPS |
+| Android APK | Done | Capacitor scaffold + `npm run apk` build script; see `ANDROID_APK_GUIDE.md` |
+
+## Deployment & Mobile
+
+- 一键部署：见 **`DEPLOY_QUICKSTART.md`**（IP + HTTP 直连 / Nginx / HTTPS 升级）。
+- 服务器部署细节：`DEPLOY_SERVER.md`；邮件验证码配置：`DEPLOY_AUTH_EMAIL.md`。
+- APK（安卓安装包）：见 **`ANDROID_APK_GUIDE.md`**（服务器产 APK → 手机侧载 → 连接服务器）。
 
 ## Local Development
 
@@ -91,10 +99,10 @@ The script will:
 - keep bundled and uploaded music files in the `music_data` Docker volume
 - wait for `http://127.0.0.1:18000/health`
 
-Open after deployment:
+Open after deployment (default `APP_BIND_ADDR=0.0.0.0`):
 
 ```text
-http://127.0.0.1:18000
+http://<server-ip>:18000    # direct phone/browser access over IP + HTTP
 ```
 
 Useful commands:
@@ -123,6 +131,8 @@ Commit these:
 - `backend/migrations/*`
 - approved local music assets in `backend/music`
 - `.env.example`, Docker files, scripts, and docs
+- `frontend/public/` (PWA manifest, Service Worker, icons)
+- `frontend/capacitor.config.json` and `frontend/scripts/*` (APK build chain)
 
 Do not commit these:
 
@@ -132,6 +142,7 @@ Do not commit these:
 - `node_modules`, `.venv`, `__pycache__`
 - logs, screenshots, temporary verification artifacts
 - uploaded user music files named `backend/music/upload-*`
+- `frontend/android/` (generated native project; build it on server/PC) and any `.keystore` files
 
 ## Safety Notes
 

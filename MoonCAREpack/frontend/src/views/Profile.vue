@@ -101,6 +101,43 @@
 
           <div class="border-t border-gray-100"></div>
 
+          <!-- Server address (mobile / APK) -->
+          <div class="p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+              <div>
+                <div class="font-medium text-gray-800 text-sm">服务器地址</div>
+                <div class="text-xs text-gray-500">APK / 手机访问时填写，例如 http://123.45.67.89:18000</div>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <input
+                v-model="serverBase"
+                type="text"
+                inputmode="url"
+                autocomplete="url"
+                placeholder="留空 = 与当前页面同源"
+                class="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400"
+                @keyup.enter="saveServerBase"
+              />
+              <button
+                type="button"
+                class="shrink-0 text-sm px-4 py-2 rounded-lg bg-blue-500 text-white font-medium active:bg-blue-600"
+                @click="saveServerBase"
+              >
+                保存
+              </button>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">
+              当前连接：
+              <span class="text-gray-500">{{ currentApiBase }}</span>
+            </p>
+          </div>
+
+          <div class="border-t border-gray-100"></div>
+
           <button
             type="button"
             class="w-full flex items-center gap-3 p-4 active:bg-gray-50 text-left"
@@ -131,14 +168,26 @@
 
 <script setup>
 import BottomNav from '../components/BottomNav.vue'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHealthStore } from '../stores/health'
 import { useAuthStore } from '../stores/auth'
+import { getStoredServerBase, setStoredServerBase, getApiBaseUrl } from '../config/runtime'
 
 const router = useRouter()
 const healthStore = useHealthStore()
 const authStore = useAuthStore()
+
+const serverBase = ref(getStoredServerBase())
+const currentApiBase = getApiBaseUrl()
+
+function saveServerBase() {
+  const saved = setStoredServerBase(serverBase.value)
+  serverBase.value = saved
+  // Recompute display target; API calls resolve the base per-request so no
+  // reload is required for subsequent requests.
+  window.location.reload()
+}
 
 const cyclePrediction = computed(() => healthStore.cyclePrediction)
 

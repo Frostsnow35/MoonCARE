@@ -287,6 +287,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { chatAPI, interviewAPI } from '../api'
+import { getApiBaseForFetch } from '../config/runtime'
 import { useChatStore } from '../stores/chat'
 import BottomNav from '../components/BottomNav.vue'
 
@@ -296,7 +297,7 @@ const STREAM_FIRST_CHUNK_TIMEOUT_MS = 120000
 const STREAM_OVERALL_TIMEOUT_MS = 180000
 const CLIENT_CONTEXT_TURN_LIMIT = 12
 const CLIENT_CONTEXT_TEXT_LIMIT = 500
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+const apiBaseUrl = getApiBaseForFetch()
 
 const messagesContainer = ref(null)
 const inputEl = ref(null)

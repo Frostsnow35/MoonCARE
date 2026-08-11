@@ -30,6 +30,23 @@
             />
           </div>
 
+          <div class="p-3 bg-blue-50/70 border border-blue-100 rounded-xl">
+            <label class="block text-xs font-medium text-blue-700 mb-1">
+              服务器地址（APK / 手机直连时填写）
+            </label>
+            <input
+              v-model.trim="serverBase"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="留空 = 与当前页面同源"
+              class="w-full px-3 py-2 rounded-lg border border-blue-200 bg-white text-sm focus:border-blue-400 focus:outline-none"
+            />
+            <p class="text-[11px] text-blue-500 mt-1">
+              例如 http://123.45.67.89:18000 。保存后立即生效，无需刷新。
+            </p>
+          </div>
+
           <div>
             <div class="flex items-center justify-between mb-1">
               <label class="block text-sm font-medium text-gray-700">密码</label>
@@ -72,6 +89,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { getStoredServerBase, setStoredServerBase } from '../config/runtime'
 
 const route = useRoute()
 const router = useRouter()
@@ -79,6 +97,7 @@ const authStore = useAuthStore()
 
 const email = ref('')
 const password = ref('')
+const serverBase = ref(getStoredServerBase())
 const loading = ref(false)
 const errorMessage = ref('')
 
@@ -91,6 +110,9 @@ async function handleLogin() {
 
   loading.value = true
   errorMessage.value = ''
+
+  // Persist server address before any authenticated API call happens.
+  setStoredServerBase(serverBase.value)
 
   try {
     await authStore.login(email.value, password.value)

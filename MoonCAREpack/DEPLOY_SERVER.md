@@ -2,7 +2,8 @@
 
 > 目标路径：`/www/wwwroot/MoonCARE`
 > 部署方式：上传整个 `MoonCAREpack` 文件夹到 `/www/wwwroot`，改名为 `MoonCARE` 后部署
-> 当前策略：一体化镜像；Nginx 1.28.3 反向代理；暂时用服务器 IP 访问；默认不迁移数据库
+> 当前策略：一体化镜像；默认 IP + HTTP 直连（`APP_BIND_ADDR=0.0.0.0`，手机可访问）；可选用 Nginx 反代；默认不迁移数据库
+> 快速上手：请优先阅读 `DEPLOY_QUICKSTART.md`（含 APK 指引见 `ANDROID_APK_GUIDE.md`）
 
 ## 0. 包内必须包含
 
@@ -73,11 +74,13 @@ vi .env
 | `PIP_DEFAULT_TIMEOUT` / `PIP_RETRIES` | 默认 `300` / `10`，用于 Docker build 阶段 pip 下载 |
 | `NVIDIA_API_KEY` | NVIDIA provider 的真实 API key |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM_EMAIL` | 邮箱验证码需要真实 SMTP 配置 |
+| `APP_BIND_ADDR` | 直接手机访问填 `0.0.0.0`；Nginx 反代填 `127.0.0.1` |
 
-当前明确不要迁移数据库：
+当前默认配置（无需域名，手机通过 `http://IP:18000` 访问）：
 
 ```env
 RUN_DB_MIGRATIONS=false
+APP_BIND_ADDR=0.0.0.0
 APP_PORT=18000
 POSTGRES_PORT=15432
 PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple

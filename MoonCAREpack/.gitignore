@@ -33,6 +33,16 @@ backend/dist/
 .vite/
 frontend/.vite/
 
+# Capacitor / Android
+frontend/android/
+frontend/android/**/*.apk
+frontend/android/**/*.aab
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/mooncare-release.keystore
+frontend/android/local.properties
+
 # Logs and local tooling
 logs/
 *.log
